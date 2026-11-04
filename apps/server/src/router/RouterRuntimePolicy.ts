@@ -25,9 +25,22 @@ export function capRouterLimits<
     : limits;
 }
 
+/** The router's T3 tools: read anything, propose tasks, and answer the user in a channel. */
+export const ROUTER_TOOLS: ReadonlyArray<string> = [
+  "orchestrator_capabilities",
+  "t3_project_list",
+  "t3_project_read",
+  "t3_thread_launch",
+  "t3_thread_list",
+  "t3_thread_read",
+  "t3_thread_search",
+  "list_scheduled_tasks",
+  "channel_reply",
+];
+
 /**
  * The router only reads and delegates. Its own turns run read-only and never ask for approval,
- * and T3's tools, its real work, run without asking. The sandbox and approval policy are Codex's; other providers ignore them, so there the
+ * and it gets only the T3 tools it needs, which run without asking. The sandbox and approval policy are Codex's; other providers ignore them, so there the
  * router's instructions are the only limit.
  */
 export const layer: Layer.Layer<RuntimePolicyV2, never, RuntimePolicyV2> = Layer.effect(
@@ -42,7 +55,7 @@ export const layer: Layer.Layer<RuntimePolicyV2, never, RuntimePolicyV2> = Layer
           ...policy,
           approvalPolicy: "never",
           sandboxPolicy: { type: "readOnly" },
-          approveT3Tools: true,
+          t3ToolAllowlist: ROUTER_TOOLS,
         });
       }),
     });

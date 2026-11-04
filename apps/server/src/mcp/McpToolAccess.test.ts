@@ -31,6 +31,7 @@ const backgroundThreadId = ThreadId.make("thread:background");
 const oldProviderThreadId = ThreadId.make("thread:old-provider-background");
 const archivedThreadId = ThreadId.make("thread:archived-background");
 const unknownOwnerThreadId = ThreadId.make("thread:unknown-background-owner");
+const routerThreadId = ThreadId.make("thread:router");
 
 const backgroundShell = (threadId: ThreadId, providerInstanceId: ProviderInstanceId) => ({
   ...liveThreadShell(threadId, { activeRunId: null }),
@@ -46,6 +47,7 @@ const shells = new Map([
     liveThreadShell(planThreadId, { runtimeMode: "approval-required", interactionMode: "plan" }),
   ],
   [fullAccessThreadId, liveThreadShell(fullAccessThreadId)],
+  [routerThreadId, { ...liveThreadShell(routerThreadId), tags: ["router"] }],
   [endedThreadId, liveThreadShell(endedThreadId, { activeRunId: null })],
   [backgroundThreadId, backgroundShell(backgroundThreadId, ProviderInstanceId.make("codex"))],
   [oldProviderThreadId, backgroundShell(oldProviderThreadId, ProviderInstanceId.make("claude"))],
@@ -225,6 +227,7 @@ const background = threadCaller(backgroundThreadId);
 const oldProviderBackground = threadCaller(oldProviderThreadId);
 const archivedBackground = threadCaller(archivedThreadId);
 const unknownOwnerBackground = threadCaller(unknownOwnerThreadId);
+const router = threadCaller(routerThreadId);
 const mismatchedProvider = {
   ...background,
   thread: { ...background.thread!, providerInstanceId: ProviderInstanceId.make("claude") },
@@ -247,6 +250,9 @@ it.effect.each([
   ["reads", ended, {}, "ran"],
   ["reads", supervisedClient, {}, "ran"],
   ["reads", readOnlyClient, {}, "ran"],
+  // The router gets only its own tools, which these probes are not.
+  ["reads", router, {}, "capability_denied"],
+  ["starts_threads", router, {}, "capability_denied"],
 
   ["writes", readOnlyClient, {}, "capability_denied"],
   ["writes_threads", readOnlyClient, { threadId: supervisedThreadId }, "capability_denied"],

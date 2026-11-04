@@ -21,6 +21,8 @@ import {
   type DispatchModeRefusal,
 } from "../orchestration-v2/DispatchModeLimit.ts";
 import * as PeerForwarding from "../peer/PeerForwarding.ts";
+import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
+import { isRouterThread, ROUTER_TOOLS } from "../router/RouterRuntimePolicy.ts";
 import { assertNotLinked, assertSameLink, callerLinkOrigin } from "./linkOrigin.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import { resolveInteractionMode, resolveRuntimeMode } from "./delegatedTaskModes.ts";
@@ -364,6 +366,29 @@ const takesLinkedEnvironment = (tool: Tool.Any) => {
   );
 };
 
+/**
+ * The router gets only its own tools, whatever its provider shows it. Tools that need no thread
+ * service cannot look the caller up, and stay open; they reach no thread or project.
+ */
+const refuseOutsideRouterTools = Effect.fn("McpToolAccess.refuseOutsideRouterTools")(function* (
+  name: string,
+) {
+  if (ROUTER_TOOLS.includes(name)) return;
+  const scope = yield* McpInvocationContext.McpInvocationContext;
+  if (scope.thread === undefined) return;
+  const threads = yield* Effect.serviceOption(ThreadManagement.ThreadManagementService);
+  if (Option.isNone(threads)) return;
+  const caller = yield* threads.value
+    .getThreadShell(scope.thread.threadId)
+    .pipe(Effect.orElseSucceed(() => null));
+  if (caller !== null && isRouterThread(caller)) {
+    return yield* new OrchestratorMcpFailure({
+      code: "capability_denied",
+      message: `The router cannot call ${name}.`,
+    });
+  }
+});
+
 const linksUnavailable = new OrchestratorMcpFailure({
   code: "orchestration_error",
   message: "This environment cannot reach linked environments.",
@@ -382,7 +407,14 @@ const routed = Effect.fn("McpToolAccess.routed")(function* <Tools extends Record
 ) {
   // Optional so toolkits that never leave this environment build without it.
   const forwarding = yield* Effect.serviceOption(PeerForwarding.PeerForwarding);
-  const handlers: Record<string, unknown> = { ...checked };
+  const handlers: Record<string, unknown> = Object.fromEntries(
+    Object.entries<(params: object) => Effect.Effect<unknown, Tool.Failure<Tools[keyof Tools]>>>(
+      checked as never,
+    ).map(([name, handle]) => [
+      name,
+      (params: object) => Effect.andThen(refuseOutsideRouterTools(name), handle(params)),
+    ]),
+  );
   for (const [name, declaration] of Object.entries<Declaration<unknown>>(declarations)) {
     const tool = toolkit.tools[name];
     if (tool === undefined || !takesLinkedEnvironment(tool)) continue;

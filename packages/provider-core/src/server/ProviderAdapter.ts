@@ -57,10 +57,10 @@ export const ProviderAdapterV2RuntimePolicy = Schema.Struct({
    */
   maxRuntimeMode: Schema.optional(RuntimeMode),
   /**
-   * T3's own tools run without asking, even where the sandbox would make the provider ask. Set for
-   * the router, whose shell is read-only but whose work is calling T3's tools.
+   * The only T3 tools the agent gets, and they run without asking, even where the sandbox would
+   * make the provider ask. Set for the router, whose shell is read-only and whose work is these.
    */
-  approveT3Tools: Schema.optional(Schema.Boolean),
+  t3ToolAllowlist: Schema.optional(Schema.Array(Schema.String)),
 });
 export type ProviderAdapterV2RuntimePolicy = typeof ProviderAdapterV2RuntimePolicy.Type;
 
