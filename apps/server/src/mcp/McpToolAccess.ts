@@ -378,9 +378,16 @@ const refuseOutsideRouterTools = Effect.fn("McpToolAccess.refuseOutsideRouterToo
   if (scope.thread === undefined) return;
   const threads = yield* Effect.serviceOption(ThreadManagement.ThreadManagementService);
   if (Option.isNone(threads)) return;
-  const caller = yield* threads.value
-    .getThreadShell(scope.thread.threadId)
-    .pipe(Effect.orElseSucceed(() => null));
+  // A failed lookup refuses the call, so an unreadable router never slips through.
+  const caller = yield* threads.value.getThreadShell(scope.thread.threadId).pipe(
+    Effect.mapError(
+      () =>
+        new OrchestratorMcpFailure({
+          code: "orchestration_error",
+          message: "Could not read the calling thread.",
+        }),
+    ),
+  );
   if (caller !== null && isRouterThread(caller)) {
     return yield* new OrchestratorMcpFailure({
       code: "capability_denied",
@@ -428,6 +435,7 @@ const routed = Effect.fn("McpToolAccess.routed")(function* <Tools extends Record
     ) => Effect.Effect<unknown, Tool.Failure<Tools[keyof Tools]>>;
     handlers[name] = ({ environmentId, ...params }: { readonly environmentId?: EnvironmentId }) =>
       Effect.gen(function* () {
+        yield* refuseOutsideRouterTools(name);
         const scope = yield* McpInvocationContext.McpInvocationContext;
         const target = PeerForwarding.remoteTarget(scope, environmentId);
         if (target === undefined) return yield* here(params);
