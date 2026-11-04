@@ -1,0 +1,181 @@
+import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
+import { effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
+import { isProviderNativeSubagentThread, ROUTER_TAG } from "@t3tools/contracts";
+
+import { resolveSidebarThreadStatus } from "../Sidebar.logic";
+
+/**
+ * Board columns, in board order. A thread is a task and the threads it delegates to are subtasks.
+ * Proposed means plan mode: the task plans and waits for the user's approval before it changes
+ * anything. Needs you covers approvals, questions, guest requests, failures and usage limits.
+ */
+export const TASK_COLUMNS = [
+  "proposed",
+  "todo",
+  "in_progress",
+  "needs_you",
+  "in_review",
+  "done",
+  "snoozed",
+] as const;
+export type TaskColumn = (typeof TASK_COLUMNS)[number];
+
+export const TASK_COLUMN_LABELS: Record<TaskColumn, string> = {
+  proposed: "Proposed",
+  todo: "Todo",
+  in_progress: "In progress",
+  needs_you: "Needs you",
+  in_review: "In review",
+  done: "Done",
+  snoozed: "Snoozed",
+};
+
+export interface TaskNode {
+  readonly key: string;
+  readonly thread: EnvironmentThreadShell;
+  readonly column: TaskColumn;
+  readonly subtasks: ReadonlyArray<TaskNode>;
+}
+
+function taskKey(thread: Pick<EnvironmentThreadShell, "environmentId" | "id">): string {
+  return scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
+}
+
+export function isRouterThread(thread: Pick<EnvironmentThreadShell, "source">): boolean {
+  return thread.source.tags?.includes(ROUTER_TAG) === true;
+}
+
+const ACTIVE_RUNTIME = new Set(["preparing", "queued", "starting", "running", "waiting"]);
+
+export function resolveTaskColumn(thread: EnvironmentThreadShell, now: string): TaskColumn {
+  if (thread.settledOverride === "settled") return "done";
+  if (effectiveSnoozed(thread, { now })) return "snoozed";
+  const status = resolveSidebarThreadStatus(thread);
+  if (
+    status === "approval" ||
+    status === "input" ||
+    status === "request" ||
+    status === "failed" ||
+    status === "limited"
+  ) {
+    return "needs_you";
+  }
+  if (thread.interactionMode === "plan") return "proposed";
+  if (thread.runtime === null && thread.latestRun === null) return "todo";
+  if (
+    (thread.runtime !== null && ACTIVE_RUNTIME.has(thread.runtime.status)) ||
+    thread.pendingBackgroundTasks.length > 0
+  ) {
+    return "in_progress";
+  }
+  return "in_review";
+}
+
+/** Subtasks are the threads a task delegated work to. Provider-native subagents and side chats stay inside their thread. */
+function isSubtask(thread: EnvironmentThreadShell): boolean {
+  return (
+    thread.lineage.relationshipToParent === "subagent" &&
+    thread.lineage.parentThreadId !== null &&
+    !isProviderNativeSubagentThread(thread.source)
+  );
+}
+
+function isHiddenChild(thread: EnvironmentThreadShell): boolean {
+  return (
+    thread.lineage.sideChat === true ||
+    (thread.lineage.relationshipToParent === "subagent" && !isSubtask(thread))
+  );
+}
+
+/**
+ * Builds the task tree from every thread shell. The router is left out, and the work it delegates
+ * becomes top-level tasks, since the router only hands work out. A subtask whose parent is missing
+ * becomes a task, so its work is never out of reach.
+ */
+export function buildTaskTree(
+  threads: ReadonlyArray<EnvironmentThreadShell>,
+  now: string,
+): ReadonlyArray<TaskNode> {
+  const live = threads.filter(
+    (thread) => thread.archivedAt === null && thread.deletedAt === null && !isHiddenChild(thread),
+  );
+  const routerKeys = new Set(live.filter(isRouterThread).map(taskKey));
+  const byKey = new Map(live.map((thread) => [taskKey(thread), thread]));
+  const childrenByParent = new Map<string, EnvironmentThreadShell[]>();
+  const roots: EnvironmentThreadShell[] = [];
+  for (const thread of live) {
+    const key = taskKey(thread);
+    if (routerKeys.has(key)) continue;
+    const parentKey =
+      isSubtask(thread) && thread.lineage.parentThreadId !== null
+        ? taskKey({ environmentId: thread.environmentId, id: thread.lineage.parentThreadId })
+        : null;
+    if (parentKey === null || !byKey.has(parentKey) || routerKeys.has(parentKey)) {
+      roots.push(thread);
+      continue;
+    }
+    const siblings = childrenByParent.get(parentKey) ?? [];
+    siblings.push(thread);
+    childrenByParent.set(parentKey, siblings);
+  }
+  const build = (thread: EnvironmentThreadShell, seen: ReadonlySet<string>): TaskNode => {
+    const key = taskKey(thread);
+    const nextSeen = new Set(seen).add(key);
+    return {
+      key,
+      thread,
+      column: resolveTaskColumn(thread, now),
+      subtasks: (childrenByParent.get(key) ?? [])
+        .filter((child) => !nextSeen.has(taskKey(child)))
+        .toSorted(byCreatedAt)
+        .map((child) => build(child, nextSeen)),
+    };
+  };
+  return roots.toSorted(byRecentActivity).map((thread) => build(thread, new Set()));
+}
+
+function byCreatedAt(a: EnvironmentThreadShell, b: EnvironmentThreadShell): number {
+  return a.createdAt.localeCompare(b.createdAt);
+}
+
+function byRecentActivity(a: EnvironmentThreadShell, b: EnvironmentThreadShell): number {
+  return b.updatedAt.localeCompare(a.updatedAt);
+}
+
+export function groupTasksByColumn(
+  tasks: ReadonlyArray<TaskNode>,
+): ReadonlyMap<TaskColumn, ReadonlyArray<TaskNode>> {
+  const groups = new Map<TaskColumn, TaskNode[]>(TASK_COLUMNS.map((column) => [column, []]));
+  for (const task of tasks) groups.get(task.column)!.push(task);
+  return groups;
+}
+
+export interface SubtaskProgress {
+  readonly done: number;
+  readonly total: number;
+}
+
+/** Counts every subtask below a task; done means settled or finished for review. */
+export function subtaskProgress(task: TaskNode): SubtaskProgress {
+  let done = 0;
+  let total = 0;
+  const visit = (node: TaskNode) => {
+    for (const subtask of node.subtasks) {
+      total += 1;
+      if (subtask.column === "done" || subtask.column === "in_review") done += 1;
+      visit(subtask);
+    }
+  };
+  visit(task);
+  return { done, total };
+}
+
+export function matchesTaskQuery(task: TaskNode, query: string): boolean {
+  const folded = query.trim().toLowerCase();
+  if (folded === "") return true;
+  return (
+    task.thread.title.toLowerCase().includes(folded) ||
+    task.subtasks.some((subtask) => matchesTaskQuery(subtask, folded))
+  );
+}

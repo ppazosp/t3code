@@ -77,6 +77,8 @@ import {
   DeviceStandardToolkit,
 } from "./toolkits/device/tools.ts";
 import * as HtmlHandlers from "./toolkits/html/handlers.ts";
+import * as ChannelsHandlers from "./toolkits/channels/handlers.ts";
+import { ChannelsToolkit } from "./toolkits/channels/tools.ts";
 import { HtmlPreviewTool, HtmlPreviewToolkit, HtmlRenderToolkit } from "./toolkits/html/tools.ts";
 import { requestUrl } from "../requestUrl.ts";
 
@@ -1205,6 +1207,7 @@ export const layerTools = Layer.mergeAll(
   layerPullRequestsToolkit,
   layerDeviceToolkit,
   layerHtmlToolkit,
+  toolkitRegistration(ChannelsToolkit, ChannelsHandlers.layer),
 );
 
 export const layer = layerMcpTransport(layerTools);
