@@ -90,9 +90,16 @@ export function readSlackMessage(
   );
 }
 
-/** The router's message: a header it is told how to read, then the text exactly as written. */
+/**
+ * The router's message: a header it is told how to read, then the text quoted line by line, so a
+ * line that looks like a header inside someone's message cannot pass for one.
+ */
 export function routerMessageText(message: ChannelMessage): string {
-  return `[slack ${message.where} from ${message.author} ref=${message.ref}]\n${message.text}`;
+  const quoted = message.text
+    .split("\n")
+    .map((line) => `> ${line}`)
+    .join("\n");
+  return `[slack ${message.where} from ${message.author} ref=${message.ref}]\n${quoted}`;
 }
 
 export function parseSlackRef(

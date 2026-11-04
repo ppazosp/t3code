@@ -82,16 +82,22 @@ const findRouter = (threads: ThreadManagementService.ThreadManagementService["Se
 
 const SEEN_LIMIT = 500;
 
+/** Remembers the last few hundred keys, oldest out first. */
+function rememberBounded(keys: Set<string>, key: string) {
+  keys.add(key);
+  if (keys.size > SEEN_LIMIT) keys.delete(keys.values().next().value!);
+}
+
 function runSlack(
   settings: SlackSettings,
   threads: ThreadManagementService.ThreadManagementService["Service"],
+  userRefs: Set<string>,
 ) {
   const seen = new Set<string>();
   const deliver = Effect.fn("Channels.deliver")(
     function* (message: ChannelMessage) {
       if (seen.has(message.id)) return;
-      seen.add(message.id);
-      if (seen.size > SEEN_LIMIT) seen.delete(seen.values().next().value!);
+      rememberBounded(seen, message.id);
       const router = yield* findRouter(threads);
       if (Option.isNone(router)) {
         yield* Effect.logWarning("A Slack message arrived, but no thread is tagged as the router.");
@@ -109,6 +115,7 @@ function runSlack(
         createdBy: message.fromUser ? "user" : "system",
         creationSource: "server",
       });
+      if (message.fromUser) rememberBounded(userRefs, message.ref);
     },
     Effect.catchCause((cause) =>
       Effect.logWarning("Could not pass a Slack message to the router", { cause }),
@@ -189,6 +196,9 @@ export const layer: Layer.Layer<
   Effect.gen(function* () {
     const threads = yield* ThreadManagementService.ThreadManagementService;
     const http = yield* HttpClient.HttpClient;
+    // The router answers only where the user wrote to it, so text it read from anyone else
+    // cannot send it to post somewhere new.
+    const userRefs = new Set<string>();
     const slack = readSlackSettings(
       yield* settingsConfig.pipe(
         Effect.orElseSucceed(() => ({
@@ -201,7 +211,9 @@ export const layer: Layer.Layer<
     );
     if (Option.isSome(slack)) {
       yield* Effect.forkScoped(
-        runSlack(slack.value, threads).pipe(Effect.provideService(HttpClient.HttpClient, http)),
+        runSlack(slack.value, threads, userRefs).pipe(
+          Effect.provideService(HttpClient.HttpClient, http),
+        ),
       );
     }
     return Channels.of({
@@ -210,8 +222,10 @@ export const layer: Layer.Layer<
           return yield* new ChannelError({ message: "No channel is connected to this T3." });
         }
         const target = parseSlackRef(ref);
-        if (Option.isNone(target)) {
-          return yield* new ChannelError({ message: `Unknown channel ref ${ref}.` });
+        if (Option.isNone(target) || !userRefs.has(ref)) {
+          return yield* new ChannelError({
+            message: `You can reply only to a message the user sent you; ${ref} is not one.`,
+          });
         }
         yield* slackCall(
           "chat.postMessage",

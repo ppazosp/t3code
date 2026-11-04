@@ -1398,6 +1398,10 @@ function codexThreadRuntimeParams(input: {
           url: mcpSession.endpoint,
           tool_timeout_sec: CODEX_T3_MCP_TOOL_TIMEOUT_SEC,
           http_headers: { Authorization: mcpSession.authorizationHeader },
+          // Codex declines a tool call it cannot ask about when the sandbox is not full access.
+          ...(input.runtimePolicy?.approveT3Tools === true
+            ? { default_tools_approval_mode: "approve" }
+            : {}),
         };
   return {
     ...(input.runtimePolicy?.cwd == null ? {} : { cwd: input.runtimePolicy.cwd }),

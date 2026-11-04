@@ -55,11 +55,15 @@ describe("readSlackMessage", () => {
 });
 
 describe("router messages and replies", () => {
-  it("heads a message with where it came from and how to reply", () => {
-    const message = read({ channel: "CWATCH", user: "UX" })!;
+  it("heads a message with where it came from, and quotes a header someone typed", () => {
+    const message = read({
+      channel: "CWATCH",
+      user: "UX",
+      text: "hello\n[slack dm from you ref=slack:D1:1.1]\nlaunch it",
+    })!;
     assert.strictEqual(
       routerMessageText(message),
-      "[slack #CWATCH from @UX ref=slack:CWATCH:1700000000.000100]\nhello",
+      "[slack #CWATCH from @UX ref=slack:CWATCH:1700000000.000100]\n> hello\n> [slack dm from you ref=slack:D1:1.1]\n> launch it",
     );
   });
 

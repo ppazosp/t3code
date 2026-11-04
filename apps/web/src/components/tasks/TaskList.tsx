@@ -3,6 +3,7 @@ import { ChevronRightIcon } from "lucide-react";
 import { useState } from "react";
 
 import { cn } from "~/lib/utils";
+import { canApproveTask, TaskApproveButton } from "./TaskApproveButton";
 import { Separator } from "../ui/separator";
 import {
   TaskColumnGlyph,
@@ -91,6 +92,7 @@ function TaskRow({
             <TaskUpdatedAt task={task} />
           </span>
         </button>
+        {canApproveTask(task) ? <TaskApproveButton task={task} /> : null}
       </div>
       {expanded
         ? task.subtasks.map((subtask) => (

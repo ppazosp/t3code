@@ -29,6 +29,9 @@ import { TaskStatusPill } from "./TaskPresentation";
 import { resolveTaskColumn } from "./tasks.logic";
 
 const ROUTER_TITLE = "Router";
+// The server caps what the router starts, whatever its own mode. Its own mode stays narrow too,
+// so a provider without a read-only sandbox still asks before the router edits anything.
+const ROUTER_RUNTIME_MODE = "approval-required";
 
 export function RouterBar({
   router,
@@ -185,7 +188,7 @@ function RouterSetup({ projects }: { projects: ReadonlyArray<EnvironmentProject>
             projectId: project.id,
             title: ROUTER_TITLE,
             modelSelection: model.selection,
-            runtimeMode: "full-access",
+            runtimeMode: ROUTER_RUNTIME_MODE,
             interactionMode: "default",
             branch: null,
             worktreePath: null,
@@ -210,7 +213,7 @@ function RouterSetup({ projects }: { projects: ReadonlyArray<EnvironmentProject>
               attachments: [],
             },
             modelSelection: model.selection,
-            runtimeMode: "full-access",
+            runtimeMode: ROUTER_RUNTIME_MODE,
             interactionMode: "default",
             createdAt,
           },

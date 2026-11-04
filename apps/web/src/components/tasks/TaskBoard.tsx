@@ -1,6 +1,7 @@
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/models";
 
 import { cn } from "~/lib/utils";
+import { canApproveTask, TaskApproveButton } from "./TaskApproveButton";
 import {
   TaskColumnGlyph,
   TaskProjectLabel,
@@ -72,27 +73,32 @@ function TaskCard({
   onOpen: () => void;
 }) {
   return (
-    <button
-      type="button"
+    <div
       draggable
       onDragStart={(event) => {
         event.dataTransfer.setData(TASK_DRAG_TYPE, task.key);
         event.dataTransfer.effectAllowed = "move";
       }}
-      onClick={onOpen}
       className={cn(
-        "flex w-full flex-col gap-2 rounded-md border border-border/70 bg-card p-2.5 text-left shadow-xs/5",
-        "outline-hidden ring-ring hover:border-border hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-inset",
+        "relative flex w-full flex-col gap-2 rounded-md border border-border/70 bg-card p-2.5 text-left shadow-xs/5",
+        "hover:border-border hover:bg-accent/40",
         task.column === "done" && "opacity-70",
       )}
     >
-      <span className="flex min-w-0 items-start gap-2">
+      {/* The whole card opens the task; the approve control sits above this layer. */}
+      <button
+        type="button"
+        aria-label={`Open ${task.thread.title}`}
+        onClick={onOpen}
+        className="absolute inset-0 rounded-md outline-hidden ring-ring focus-visible:ring-2 focus-visible:ring-inset"
+      />
+      <span className="pointer-events-none flex min-w-0 items-start gap-2">
         <TaskColumnGlyph column={task.column} className="mt-0.5" />
         <span className="line-clamp-2 min-w-0 flex-1 text-sm leading-snug">
           {task.thread.title}
         </span>
       </span>
-      <span className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1">
+      <span className="pointer-events-none flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1">
         <TaskStatusPill task={task} />
         <TaskSubtaskCount task={task} />
         <TaskProjectLabel project={project} />
@@ -100,6 +106,11 @@ function TaskCard({
           <TaskUpdatedAt task={task} />
         </span>
       </span>
-    </button>
+      {canApproveTask(task) ? (
+        <span className="flex justify-end">
+          <TaskApproveButton task={task} />
+        </span>
+      ) : null}
+    </div>
   );
 }

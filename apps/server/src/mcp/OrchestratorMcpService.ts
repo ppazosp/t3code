@@ -122,6 +122,7 @@ import {
   runtimeModeRank,
   taskPrompt,
 } from "./delegatedTaskModes.ts";
+import { capRouterLimits } from "../router/RouterRuntimePolicy.ts";
 import { isLiveCallerShell, threadNotFound } from "./threadAccess.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
 import * as PeerForwarding from "../peer/PeerForwarding.ts";
@@ -1148,10 +1149,10 @@ const make = Effect.gen(function* () {
     const parent = yield* loadProjection(scope.thread.threadId, false);
     return {
       parent,
-      limits: {
+      limits: capRouterLimits(parent.thread, {
         runtimeMode: parent.thread.runtimeMode,
         interactionMode: parent.thread.interactionMode,
-      },
+      }),
     } as const;
   });
 
@@ -2390,13 +2391,14 @@ const make = Effect.gen(function* () {
         providers,
         skipProjectEnablementFilter: isRetryOfAcceptedDelegation,
       });
+      const parentLimits = capRouterLimits(parent.thread, parent.thread);
       const runtimeMode = yield* resolveRuntimeMode(
-        parent.thread.runtimeMode,
+        parentLimits.runtimeMode,
         input.runtimeMode,
         target,
       );
       const interactionMode = yield* resolveInteractionMode(
-        parent.thread.interactionMode,
+        parentLimits.interactionMode,
         input.interactionMode,
       );
       let workspaceStrategy: OrchestrationV2ThreadLaunchWorkspaceStrategy | undefined;
@@ -2803,13 +2805,14 @@ const make = Effect.gen(function* () {
                 providers,
                 skipProjectEnablementFilter: isRetryOfAcceptedCreation,
               });
+              const parentLimits = capRouterLimits(parent.thread, parent.thread);
               const runtimeMode = yield* resolveRuntimeMode(
-                parent.thread.runtimeMode,
+                parentLimits.runtimeMode,
                 request.runtimeMode,
                 target,
               );
               const interactionMode = yield* resolveInteractionMode(
-                parent.thread.interactionMode,
+                parentLimits.interactionMode,
                 request.interactionMode,
               );
               yield* assertTargetEnabledForProject(parent, commandId, target);
