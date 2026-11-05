@@ -11,6 +11,7 @@ import {
   GitBranchIcon,
   LightbulbIcon,
   type LucideIcon,
+  MessagesSquareIcon,
   PinIcon,
   RotateCcwIcon,
 } from "lucide-react";
@@ -24,7 +25,13 @@ import { Input } from "../ui/input";
 import { RelativeTime } from "../RelativeTime";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { resolveThreadStatusPill } from "../Sidebar.logic";
-import { subtaskProgress, TASK_COLUMN_LABELS, type TaskColumn, type TaskNode } from "./tasks.logic";
+import {
+  slackOriginOf,
+  subtaskProgress,
+  TASK_COLUMN_LABELS,
+  type TaskColumn,
+  type TaskNode,
+} from "./tasks.logic";
 import type { TaskActions } from "./useTaskActions";
 
 const COLUMN_GLYPHS: Record<TaskColumn, { Icon: LucideIcon; className: string }> = {
@@ -241,6 +248,19 @@ export function TaskQuickActions({
       >
         <EllipsisIcon />
       </QuickAction>
+    </span>
+  );
+}
+
+/** Where in Slack the task came from, when the router proposed it from a Slack message. */
+export function TaskSlackOrigin({ task }: { task: TaskNode }) {
+  const origin = slackOriginOf(task.thread);
+  if (origin === null) return null;
+  const channel = origin.split(":")[1] ?? "";
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1 text-2xs text-muted-foreground">
+      <MessagesSquareIcon aria-hidden className="size-3" />
+      {channel.startsWith("D") ? "Slack DM" : `Slack #${channel}`}
     </span>
   );
 }

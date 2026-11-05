@@ -32,6 +32,7 @@ const oldProviderThreadId = ThreadId.make("thread:old-provider-background");
 const archivedThreadId = ThreadId.make("thread:archived-background");
 const unknownOwnerThreadId = ThreadId.make("thread:unknown-background-owner");
 const routerThreadId = ThreadId.make("thread:router");
+const proposalThreadId = ThreadId.make("thread:proposal");
 
 const backgroundShell = (threadId: ThreadId, providerInstanceId: ProviderInstanceId) => ({
   ...liveThreadShell(threadId, { activeRunId: null }),
@@ -48,6 +49,7 @@ const shells = new Map([
   ],
   [fullAccessThreadId, liveThreadShell(fullAccessThreadId)],
   [routerThreadId, { ...liveThreadShell(routerThreadId), tags: ["router"] }],
+  [proposalThreadId, { ...liveThreadShell(proposalThreadId), tags: ["proposal"] }],
   [endedThreadId, liveThreadShell(endedThreadId, { activeRunId: null })],
   [backgroundThreadId, backgroundShell(backgroundThreadId, ProviderInstanceId.make("codex"))],
   [oldProviderThreadId, backgroundShell(oldProviderThreadId, ProviderInstanceId.make("claude"))],
@@ -131,6 +133,8 @@ const ProbeToolkit = Toolkit.make(
     }),
   }),
   Tool.make("writes_environment", probe),
+  // Named like a real tool that messages another thread, which a proposal may not call.
+  Tool.make("t3_thread_send", probe),
 );
 const ran = Effect.succeed({ ran: "ran" });
 const probeHandlers: McpToolAccess.Handlers<typeof ProbeToolkit.tools> = {
@@ -149,6 +153,7 @@ const probeHandlers: McpToolAccess.Handlers<typeof ProbeToolkit.tools> = {
     "stamped",
   ),
   writes_environment: McpToolAccess.writesEnvironment(() => ran),
+  t3_thread_send: McpToolAccess.actsAsCaller(() => ran),
 };
 const layerProbeHandlers = McpToolAccess.toLayer(ProbeToolkit, probeHandlers);
 
@@ -188,6 +193,7 @@ export const refusedAtCompileTime = () => {
       writes_threads: unchecked,
       starts_threads: unchecked,
       writes_environment: unchecked,
+      t3_thread_send: unchecked,
     }),
   );
 };
@@ -228,6 +234,7 @@ const oldProviderBackground = threadCaller(oldProviderThreadId);
 const archivedBackground = threadCaller(archivedThreadId);
 const unknownOwnerBackground = threadCaller(unknownOwnerThreadId);
 const router = threadCaller(routerThreadId);
+const proposal = threadCaller(proposalThreadId);
 const mismatchedProvider = {
   ...background,
   thread: { ...background.thread!, providerInstanceId: ProviderInstanceId.make("claude") },
@@ -253,6 +260,10 @@ it.effect.each([
   // The router gets only its own tools, which these probes are not.
   ["reads", router, {}, "capability_denied"],
   ["starts_threads", router, {}, "capability_denied"],
+  // A proposal reads and plans, but hands no work to other threads until it is approved.
+  ["t3_thread_send", proposal, {}, "capability_denied"],
+  ["reads", proposal, {}, "ran"],
+  ["t3_thread_send", supervised, {}, "ran"],
 
   ["writes", readOnlyClient, {}, "capability_denied"],
   ["writes_threads", readOnlyClient, { threadId: supervisedThreadId }, "capability_denied"],

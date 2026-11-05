@@ -58,6 +58,8 @@ describe("resolveTaskColumn", () => {
     ["needs_you", shell("a", { runtime: running, hasPendingApprovals: true })],
     ["proposed", shell("a", { interactionMode: "plan", runtime: running })],
     ["needs_you", shell("a", { interactionMode: "plan", hasPendingUserInput: true })],
+    // A proposal stays proposed after the user chats with it, until Approve removes the tag.
+    ["proposed", shell("a", { tags: ["proposal"], runtime: completed, latestRun: finishedRun })],
     ["done", shell("a", { settledOverride: "settled", runtime: running })],
     ["snoozed", shell("a", { snoozedUntil: "2026-11-05T00:00:00.000Z" })],
   ] as const)("puts the thread in %s", (column, thread) => {

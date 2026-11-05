@@ -22,6 +22,7 @@ import {
 } from "../orchestration-v2/DispatchModeLimit.ts";
 import * as PeerForwarding from "../peer/PeerForwarding.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
+import { isProposalThread, PROPOSAL_DENIED_TOOLS } from "../router/RouterProposals.ts";
 import { isRouterThread, ROUTER_TOOLS } from "../router/RouterRuntimePolicy.ts";
 import { assertNotLinked, assertSameLink, callerLinkOrigin } from "./linkOrigin.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
@@ -370,15 +371,21 @@ const takesLinkedEnvironment = (tool: Tool.Any) => {
  * The router gets only its own tools, whatever its provider shows it. Tools that need no thread
  * service cannot look the caller up, and stay open; they reach no thread or project.
  */
-const refuseOutsideRouterTools = Effect.fn("McpToolAccess.refuseOutsideRouterTools")(function* (
+/**
+ * The router gets only its own tools, and a proposal cannot start, message or hand work to other
+ * threads until the user approves it. Both hold whatever the agent was told.
+ */
+const refuseOutsideRoleTools = Effect.fn("McpToolAccess.refuseOutsideRoleTools")(function* (
   name: string,
 ) {
-  if (ROUTER_TOOLS.includes(name)) return;
+  const routerTool = ROUTER_TOOLS.includes(name);
+  const proposalDenied = PROPOSAL_DENIED_TOOLS.has(name);
+  if (routerTool && !proposalDenied) return;
   const scope = yield* McpInvocationContext.McpInvocationContext;
   if (scope.thread === undefined) return;
   const threads = yield* Effect.serviceOption(ThreadManagement.ThreadManagementService);
   if (Option.isNone(threads)) return;
-  // A failed lookup refuses the call, so an unreadable router never slips through.
+  // A failed lookup refuses the call, so an unreadable caller never slips through.
   const caller = yield* threads.value.getThreadShell(scope.thread.threadId).pipe(
     Effect.mapError(
       () =>
@@ -388,10 +395,17 @@ const refuseOutsideRouterTools = Effect.fn("McpToolAccess.refuseOutsideRouterToo
         }),
     ),
   );
-  if (caller !== null && isRouterThread(caller)) {
+  if (caller === null) return;
+  if (!routerTool && isRouterThread(caller)) {
     return yield* new OrchestratorMcpFailure({
       code: "capability_denied",
       message: `The router cannot call ${name}.`,
+    });
+  }
+  if (proposalDenied && isProposalThread(caller)) {
+    return yield* new OrchestratorMcpFailure({
+      code: "capability_denied",
+      message: `This task is a proposal. It can call ${name} after the user approves its plan; until then, write the step into the plan.`,
     });
   }
 });
@@ -419,7 +433,7 @@ const routed = Effect.fn("McpToolAccess.routed")(function* <Tools extends Record
       checked as never,
     ).map(([name, handle]) => [
       name,
-      (params: object) => Effect.andThen(refuseOutsideRouterTools(name), handle(params)),
+      (params: object) => Effect.andThen(refuseOutsideRoleTools(name), handle(params)),
     ]),
   );
   for (const [name, declaration] of Object.entries<Declaration<unknown>>(declarations)) {
@@ -435,7 +449,7 @@ const routed = Effect.fn("McpToolAccess.routed")(function* <Tools extends Record
     ) => Effect.Effect<unknown, Tool.Failure<Tools[keyof Tools]>>;
     handlers[name] = ({ environmentId, ...params }: { readonly environmentId?: EnvironmentId }) =>
       Effect.gen(function* () {
-        yield* refuseOutsideRouterTools(name);
+        yield* refuseOutsideRoleTools(name);
         const scope = yield* McpInvocationContext.McpInvocationContext;
         const target = PeerForwarding.remoteTarget(scope, environmentId);
         if (target === undefined) return yield* here(params);

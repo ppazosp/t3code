@@ -11,6 +11,7 @@ import {
   TaskPinnedMark,
   TaskProjectLabel,
   TaskQuickActions,
+  TaskSlackOrigin,
   TaskStatusPill,
   TaskSubtaskCount,
   TaskTitle,
@@ -114,6 +115,7 @@ function TaskRow({
           <TaskTitle task={task} actions={actions} className="min-w-0 truncate text-sm" />
           <TaskSubtaskCount task={task} />
           <TaskPinnedMark task={task} />
+          <TaskSlackOrigin task={task} />
           <span className="ml-auto flex shrink-0 items-center gap-3">
             <TaskStatusPill task={task} />
             <span className="hidden max-w-48 md:flex">

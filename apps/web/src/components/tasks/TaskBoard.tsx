@@ -8,6 +8,7 @@ import {
   TaskPinnedMark,
   TaskProjectLabel,
   TaskQuickActions,
+  TaskSlackOrigin,
   TaskStatusPill,
   TaskSubtaskCount,
   TaskTitle,
@@ -127,6 +128,7 @@ function TaskCard({
         <TaskStatusPill task={task} />
         <TaskSubtaskCount task={task} />
         <TaskBranchLabel task={task} />
+        <TaskSlackOrigin task={task} />
       </span>
       <span className="pointer-events-none flex min-w-0 items-center gap-2 pl-5.5">
         <TaskProjectLabel project={project} />

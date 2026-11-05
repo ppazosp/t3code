@@ -1,3 +1,4 @@
+import { PROPOSAL_TAG, type ThreadTag } from "@t3tools/contracts";
 import { ChevronDownIcon } from "lucide-react";
 import { useState } from "react";
 
@@ -33,6 +34,7 @@ export function canApproveTask(task: TaskNode): boolean {
 export function TaskApproveButton({ task }: { task: TaskNode }) {
   const setInteractionMode = useOrchestrationCommand(threadEnvironment.setInteractionMode);
   const setRuntimeMode = useOrchestrationCommand(threadEnvironment.setRuntimeMode);
+  const setTag = useOrchestrationCommand(threadEnvironment.setTag);
   const startTurn = useOrchestrationCommand(threadEnvironment.startTurn);
   const [approving, setApproving] = useState(false);
   const { environmentId, id: threadId } = task.thread;
@@ -42,6 +44,12 @@ export function TaskApproveButton({ task }: { task: TaskNode }) {
     setApproving(true);
     const runtimeMode = fullAccess ? "full-access" : task.thread.runtimeMode;
     const steps = [
+      // Approval lifts the proposal's limits: it may now delegate and message other threads.
+      () =>
+        setTag({
+          environmentId,
+          input: { threadId, tag: PROPOSAL_TAG as ThreadTag, tagged: false },
+        }),
       ...(fullAccess
         ? [() => setRuntimeMode({ environmentId, input: { threadId, runtimeMode } })]
         : []),

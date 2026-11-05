@@ -1,7 +1,12 @@
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import { effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
-import { isProviderNativeSubagentThread, ROUTER_TAG } from "@t3tools/contracts";
+import {
+  isProviderNativeSubagentThread,
+  PROPOSAL_TAG,
+  ROUTER_TAG,
+  SLACK_ORIGIN_TAG_PREFIX,
+} from "@t3tools/contracts";
 
 import { resolveSidebarThreadStatus } from "../Sidebar.logic";
 
@@ -46,6 +51,16 @@ export function isRouterThread(thread: Pick<EnvironmentThreadShell, "source">): 
   return thread.source.tags?.includes(ROUTER_TAG) === true;
 }
 
+/** A task the router proposed, until the user approves it, or one the user moved back to Proposed. */
+function isProposal(thread: Pick<EnvironmentThreadShell, "source" | "interactionMode">) {
+  return thread.source.tags?.includes(PROPOSAL_TAG) === true || thread.interactionMode === "plan";
+}
+
+/** The Slack message a proposal came from, as `slack:<channel>:<thread ts>`. */
+export function slackOriginOf(thread: Pick<EnvironmentThreadShell, "source">): string | null {
+  return thread.source.tags?.find((tag) => tag.startsWith(SLACK_ORIGIN_TAG_PREFIX)) ?? null;
+}
+
 const ACTIVE_RUNTIME = new Set(["preparing", "queued", "starting", "running", "waiting"]);
 
 export function resolveTaskColumn(thread: EnvironmentThreadShell, now: string): TaskColumn {
@@ -61,7 +76,7 @@ export function resolveTaskColumn(thread: EnvironmentThreadShell, now: string): 
   ) {
     return "needs_you";
   }
-  if (thread.interactionMode === "plan") return "proposed";
+  if (isProposal(thread)) return "proposed";
   if (thread.runtime === null && thread.latestRun === null) return "todo";
   if (
     (thread.runtime !== null && ACTIVE_RUNTIME.has(thread.runtime.status)) ||

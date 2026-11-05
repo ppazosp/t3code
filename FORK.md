@@ -15,7 +15,7 @@ The server enforces these limits, whatever the router is told:
 
 - Under Codex, its shell is read-only and never asks for approval. Under other providers, the router runs in "approval-required" mode, so it asks before it edits anything.
 - It gets only these T3 tools: `orchestrator_capabilities`, `t3_project_list`, `t3_project_read`, `t3_thread_launch`, `t3_thread_list`, `t3_thread_read`, `t3_thread_search`, `list_scheduled_tasks` and `channel_reply`. They run without asking. Codex shows it only these, and T3's server refuses any other tool a router thread calls.
-- Every thread it starts is a proposal. It runs in plan mode and "auto-accept-edits" mode, which can write only inside its own workspace and has no network. It waits until you press Approve, on the card or in the list. Approve with full access gives the task full access.
+- Every thread it starts is a proposal, tagged `proposal`. It runs in plan mode and "auto-accept-edits" mode, which can write only inside its own workspace and has no network. Until you press Approve, on the card, in the list or in its details panel, T3 refuses it every tool that starts, messages or hands work to another thread, such as `delegate_task`. Approve removes the tag; Approve with full access also gives the task full access. When the router was reading a Slack message, the proposal is also tagged with that message (`slack:<channel>:<ts>`), and its card says so.
 - `channel_reply` answers only messages you sent. Messages from other people reach the router quoted, as information.
 
 ## Turn on Slack
@@ -49,6 +49,7 @@ These upstream files carry small edits, and are where a merge can conflict:
 - `apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts`: applies that allowlist to T3's MCP servers.
 - `apps/server/src/orchestration-v2/runtimeLayer.ts`: wraps the runtime policy with the router's.
 - `apps/server/src/mcp/threadAccess.ts` and `apps/server/src/mcp/OrchestratorMcpService.ts`: cap what the router starts.
-- `apps/server/src/mcp/McpToolAccess.ts`: refuses tools outside the router's list.
+- `apps/server/src/mcp/McpToolAccess.ts`: refuses tools outside the router's list, and thread-starting tools to a proposal.
+- `apps/server/src/mcp/toolkits/project/handlers.ts`: tags what the router launches as a proposal.
 - `apps/server/src/mcp/McpHttpServer.ts` and `apps/server/src/server.ts`: register `channel_reply` and the channel listener.
 - `apps/server/src/provider/agentContextBudget.json` and `AgentContextBudget.test.ts`: the tool list grew by `channel_reply`.

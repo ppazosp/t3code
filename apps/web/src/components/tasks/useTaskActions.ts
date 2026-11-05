@@ -11,7 +11,12 @@ import {
   derivePhysicalProjectKey,
   selectProjectGroupingSettings,
 } from "@t3tools/client-runtime/state/project-grouping";
-import { AuthOrchestrationOperateScope, type ContextMenuItem } from "@t3tools/contracts";
+import {
+  AuthOrchestrationOperateScope,
+  type ContextMenuItem,
+  PROPOSAL_TAG,
+  type ThreadTag,
+} from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 
@@ -77,6 +82,7 @@ export function useTaskActions() {
   const updateMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
+  const setTag = useOrchestrationCommand(threadEnvironment.setTag, { reportFailure: false });
   const serverConfigs = useServerConfigs();
   const handleNewThread = useNewThreadHandler();
   const navigate = useNavigate();
@@ -111,6 +117,15 @@ export function useTaskActions() {
       return;
     }
     if (task.column === "done") await unsettle(task);
+    if (column === "proposed") {
+      reportFailure(
+        "Could not move the task to Proposed",
+        await setTag({
+          environmentId: task.thread.environmentId,
+          input: { threadId: task.thread.id, tag: PROPOSAL_TAG as ThreadTag, tagged: true },
+        }),
+      );
+    }
     if (column === "proposed" && task.thread.interactionMode !== "plan") {
       reportFailure(
         "Could not move the task to Proposed",
