@@ -18,14 +18,14 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "../ui/sidebar";
-import { TaskColumnGlyph, TaskQuickActions, TaskStatusPill, TaskTitle } from "./TaskPresentation";
+import { TaskStatusGlyph, TaskQuickActions, TaskStatusPill, TaskTitle } from "./TaskPresentation";
 import {
   buildTaskTree,
-  groupTasksByColumn,
+  groupTasksByStatus,
   isRouterThread,
   matchesTaskQuery,
-  TASK_COLUMN_LABELS,
-  TASK_COLUMNS,
+  TASK_STATUS_LABELS,
+  TASK_STATUSES,
   type TaskNode,
 } from "./tasks.logic";
 import { type TaskActions, useTaskActions } from "./useTaskActions";
@@ -49,7 +49,7 @@ export default function TaskSidebar() {
   const tasks = buildTaskTree(threads, new Date(nowMinute).toISOString()).filter((task) =>
     matchesTaskQuery(task, query),
   );
-  const grouped = groupTasksByColumn(tasks);
+  const grouped = groupTasksByStatus(tasks);
   const open = (thread: Pick<EnvironmentThreadShell, "environmentId" | "id">) =>
     void navigate({
       to: "/$environmentId/$threadId",
@@ -95,30 +95,32 @@ export default function TaskSidebar() {
         </SidebarMenu>
       </SidebarGroup>
       <SidebarContent>
-        {TASK_COLUMNS.map((column) => {
-          const inColumn = grouped.get(column) ?? [];
-          if (inColumn.length === 0) return null;
-          return (
-            <SidebarGroup key={column}>
-              <h2 className="flex h-7 items-center gap-1.5 px-2.5 text-xs font-medium text-sidebar-muted-foreground">
-                {TASK_COLUMN_LABELS[column]}
-                <span className="tabular-nums opacity-60">{inColumn.length}</span>
-              </h2>
-              <SidebarMenu>
-                {inColumn.map((task) => (
-                  <TaskSidebarRow
-                    key={task.key}
-                    task={task}
-                    depth={0}
-                    activeKey={activeKey}
-                    actions={actions}
-                    onOpen={(node) => open(node.thread)}
-                  />
-                ))}
-              </SidebarMenu>
-            </SidebarGroup>
-          );
-        })}
+        {TASK_STATUSES.filter((status) => status !== "done" && status !== "snoozed").map(
+          (status) => {
+            const inStatus = grouped.get(status) ?? [];
+            if (inStatus.length === 0) return null;
+            return (
+              <SidebarGroup key={status}>
+                <h2 className="flex h-7 items-center gap-1.5 px-2.5 text-xs font-medium text-sidebar-muted-foreground">
+                  {TASK_STATUS_LABELS[status]}
+                  <span className="tabular-nums opacity-60">{inStatus.length}</span>
+                </h2>
+                <SidebarMenu>
+                  {inStatus.map((task) => (
+                    <TaskSidebarRow
+                      key={task.key}
+                      task={task}
+                      depth={0}
+                      activeKey={activeKey}
+                      actions={actions}
+                      onOpen={(node) => open(node.thread)}
+                    />
+                  ))}
+                </SidebarMenu>
+              </SidebarGroup>
+            );
+          },
+        )}
       </SidebarContent>
       <SidebarChromeFooter />
     </>
@@ -152,7 +154,7 @@ function TaskSidebarRow({
           onClick={() => onOpen(task)}
           style={depth === 0 ? undefined : { paddingLeft: `${0.625 + depth * 0.875}rem` }}
         >
-          <TaskColumnGlyph column={task.column} />
+          <TaskStatusGlyph status={task.status} />
           <TaskTitle task={task} actions={actions} className="min-w-0 flex-1 truncate" />
           <span className="shrink-0 group-hover/task:hidden group-focus-within/task:hidden">
             <TaskStatusPill task={task} />

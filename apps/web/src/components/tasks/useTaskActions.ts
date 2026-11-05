@@ -40,12 +40,13 @@ import {
   type ThreadActionMenuId,
 } from "../threadActionMenu.logic";
 import { toastManager } from "../ui/toast";
-import { TASK_COLUMN_LABELS, TASK_COLUMNS, type TaskColumn, type TaskNode } from "./tasks.logic";
+import { TASK_STATUS_LABELS, TASK_STATUSES, type TaskStatus, type TaskNode } from "./tasks.logic";
 
-/** Columns a user can move a task into. The rest follow what the task's agent is doing. */
-export const SETTABLE_TASK_COLUMNS: ReadonlySet<TaskColumn> = new Set(["proposed", "done"]);
+/** Statuses a user can move a task into. The rest follow what the task's agent is doing. */
+export const SETTABLE_TASK_STATUSES: ReadonlySet<TaskStatus> = new Set(["proposed", "done"]);
 
-type TaskMenuId = ThreadActionMenuId | `status:${TaskColumn}`;
+// "status" names the submenu itself, which is never picked.
+type TaskMenuId = ThreadActionMenuId | "status" | `status:${TaskStatus}`;
 
 function reportFailure(title: string, result: { readonly _tag: string }) {
   if (result._tag !== "Failure") return;
@@ -109,15 +110,15 @@ export function useTaskActions() {
   const unsettle = async (task: TaskNode) =>
     reportFailure("Could not reopen the task", await threadActions.unsettleThread(refOf(task)));
 
-  /** Moving a task changes what its column stands for, where that is the user's call. */
-  const moveTask = async (task: TaskNode, column: TaskColumn) => {
-    if (column === task.column || !canOperate(task)) return;
-    if (column === "done") {
+  /** Moving a task changes what its status means, where that is the user's call. */
+  const moveTask = async (task: TaskNode, status: TaskStatus) => {
+    if (status === task.status || !canOperate(task)) return;
+    if (status === "done") {
       await settle(task);
       return;
     }
-    if (task.column === "done") await unsettle(task);
-    if (column === "proposed") {
+    if (task.status === "done") await unsettle(task);
+    if (status === "proposed") {
       reportFailure(
         "Could not move the task to Proposed",
         await setTag({
@@ -126,7 +127,7 @@ export function useTaskActions() {
         }),
       );
     }
-    if (column === "proposed" && task.thread.interactionMode !== "plan") {
+    if (status === "proposed" && task.thread.interactionMode !== "plan") {
       reportFailure(
         "Could not move the task to Proposed",
         await setInteractionMode({
@@ -175,14 +176,14 @@ export function useTaskActions() {
     const loaded = config !== undefined;
     const now = new Date().toISOString();
     const statusMenu: ContextMenuItem<TaskMenuId> = {
-      id: "status:todo",
+      id: "status",
       label: "Status",
       icon: "circle-check",
-      children: TASK_COLUMNS.filter((column) => column !== "snoozed").map((column) => ({
-        id: `status:${column}` as const,
-        label: TASK_COLUMN_LABELS[column],
-        checked: task.column === column,
-        disabled: task.column === column || !SETTABLE_TASK_COLUMNS.has(column),
+      children: TASK_STATUSES.filter((status) => status !== "snoozed").map((status) => ({
+        id: `status:${status}` as const,
+        label: TASK_STATUS_LABELS[status],
+        checked: task.status === status,
+        disabled: task.status === status || !SETTABLE_TASK_STATUSES.has(status),
       })),
     };
     return [
@@ -195,7 +196,7 @@ export function useTaskActions() {
           isPinned: task.thread.pinnedAt != null,
           isSettled: task.thread.settledOverride === "settled",
           autoSettleEnabled: task.thread.autoSettleDisabledAt == null,
-          isSnoozed: task.column === "snoozed",
+          isSnoozed: task.status === "snoozed",
           canSnoozeNow: canSnooze(task.thread, { now }),
           isRegeneratingTitle: task.thread.titleRegeneration != null,
           isRunning: !threadRuntimeCanArchive(task.thread.runtime),
@@ -215,7 +216,7 @@ export function useTaskActions() {
   const runMenuAction = async (task: TaskNode, id: TaskMenuId) => {
     const threadRef = refOf(task);
     if (id.startsWith("status:")) {
-      await moveTask(task, id.slice("status:".length) as TaskColumn);
+      await moveTask(task, id.slice("status:".length) as TaskStatus);
       return;
     }
     const action = id as ThreadActionMenuId;
@@ -342,7 +343,7 @@ export function useTaskActions() {
     if (!api) return;
     const presets = snoozePresetsOf(task);
     const items: ReadonlyArray<ContextMenuItem<TaskMenuId>> =
-      task.column === "snoozed"
+      task.status === "snoozed"
         ? [{ id: "unsnooze", label: "Wake task", icon: "clock" }]
         : [
             ...presets.map((preset) => ({

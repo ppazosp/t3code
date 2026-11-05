@@ -7,7 +7,7 @@ import { canApproveTask, TaskApproveButton } from "./TaskApproveButton";
 import { Separator } from "../ui/separator";
 import {
   TaskBranchLabel,
-  TaskColumnGlyph,
+  TaskStatusGlyph,
   TaskPinnedMark,
   TaskProjectLabel,
   TaskQuickActions,
@@ -17,17 +17,17 @@ import {
   TaskTitle,
   TaskUpdatedAt,
 } from "./TaskPresentation";
-import { TASK_COLUMN_LABELS, type TaskColumn, type TaskNode } from "./tasks.logic";
+import { TASK_STATUS_LABELS, type TaskStatus, type TaskNode } from "./tasks.logic";
 import type { TaskActions } from "./useTaskActions";
 
 export function TaskList({
-  columns,
+  sections,
   projectOf,
   actions,
   selectedKey,
   onOpen,
 }: {
-  columns: ReadonlyArray<{ column: TaskColumn; tasks: ReadonlyArray<TaskNode> }>;
+  sections: ReadonlyArray<{ status: TaskStatus; tasks: ReadonlyArray<TaskNode> }>;
   projectOf: (task: TaskNode) => EnvironmentProject | undefined;
   actions: TaskActions;
   selectedKey: string | null;
@@ -35,13 +35,13 @@ export function TaskList({
 }) {
   return (
     <div className="space-y-4">
-      {columns
+      {sections
         .filter(({ tasks }) => tasks.length > 0)
-        .map(({ column, tasks }) => (
-          <section key={column} aria-label={TASK_COLUMN_LABELS[column]} className="space-y-0.5">
+        .map(({ status, tasks }) => (
+          <section key={status} aria-label={TASK_STATUS_LABELS[status]} className="space-y-0.5">
             <header className="flex items-center gap-2 px-3 pb-1 text-xs font-medium text-muted-foreground/70">
-              <TaskColumnGlyph column={column} />
-              <h2 className="shrink-0">{TASK_COLUMN_LABELS[column]}</h2>
+              <TaskStatusGlyph status={status} />
+              <h2 className="shrink-0">{TASK_STATUS_LABELS[status]}</h2>
               <span className="shrink-0 tabular-nums text-muted-foreground/50">{tasks.length}</span>
               <Separator className="min-w-2 flex-1" />
             </header>
@@ -90,7 +90,7 @@ function TaskRow({
         className={cn(
           "group/task flex w-full items-center gap-2 rounded-md py-1 pr-2 hover:bg-accent/50",
           task.key === selectedKey && "bg-accent/60",
-          task.column === "done" && depth === 0 && "opacity-70",
+          task.status === "done" && depth === 0 && "opacity-70",
         )}
         style={{ paddingLeft: `${0.75 + depth * 1.25}rem` }}
       >
@@ -111,7 +111,7 @@ function TaskRow({
           onClick={() => onOpen(task)}
           className="flex min-w-0 flex-1 items-center gap-2 py-0.5 text-left outline-hidden"
         >
-          <TaskColumnGlyph column={task.column} />
+          <TaskStatusGlyph status={task.status} />
           <TaskTitle task={task} actions={actions} className="min-w-0 truncate text-sm" />
           <TaskSubtaskCount task={task} />
           <TaskPinnedMark task={task} />

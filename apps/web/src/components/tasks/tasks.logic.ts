@@ -11,35 +11,49 @@ import {
 import { resolveSidebarThreadStatus } from "../Sidebar.logic";
 
 /**
- * Board columns, in board order. A thread is a task and the threads it delegates to are subtasks.
- * Proposed means plan mode: the task plans and waits for the user's approval before it changes
- * anything. Needs you covers approvals, questions, guest requests, failures and usage limits.
+ * What a task is waiting on. A thread is a task and the threads it delegates to are subtasks.
+ * Proposed waits for the user's approval of its plan. Needs you covers approvals, questions,
+ * guest requests, failures and usage limits. Ready for review is finished work the user has not
+ * settled yet. Done is settled, the way T3's sidebar hides threads that no longer need you.
  */
-export const TASK_COLUMNS = [
+export const TASK_STATUSES = [
   "proposed",
-  "todo",
-  "in_progress",
   "needs_you",
-  "in_review",
+  "review",
+  "working",
   "done",
   "snoozed",
 ] as const;
-export type TaskColumn = (typeof TASK_COLUMNS)[number];
+export type TaskStatus = (typeof TASK_STATUSES)[number];
 
-export const TASK_COLUMN_LABELS: Record<TaskColumn, string> = {
+export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
   proposed: "Proposed",
-  todo: "Todo",
-  in_progress: "In progress",
   needs_you: "Needs you",
-  in_review: "In review",
+  review: "Ready for review",
+  working: "Working",
   done: "Done",
   snoozed: "Snoozed",
 };
 
+/**
+ * The board's columns. Everything waiting on the user shares one column, most urgent first, with
+ * running work at its foot; done and snoozed tasks stay hidden until the user asks for them.
+ */
+export const BOARD_COLUMNS = [
+  { id: "proposed", label: "Proposed", statuses: ["proposed"] },
+  { id: "now", label: "Needs you", statuses: ["needs_you", "review", "working"] },
+  { id: "done", label: "Done", statuses: ["done", "snoozed"] },
+] as const satisfies ReadonlyArray<{
+  readonly id: string;
+  readonly label: string;
+  readonly statuses: ReadonlyArray<TaskStatus>;
+}>;
+export type BoardColumnId = (typeof BOARD_COLUMNS)[number]["id"];
+
 export interface TaskNode {
   readonly key: string;
   readonly thread: EnvironmentThreadShell;
-  readonly column: TaskColumn;
+  readonly status: TaskStatus;
   readonly subtasks: ReadonlyArray<TaskNode>;
 }
 
@@ -63,7 +77,7 @@ export function slackOriginOf(thread: Pick<EnvironmentThreadShell, "source">): s
 
 const ACTIVE_RUNTIME = new Set(["preparing", "queued", "starting", "running", "waiting"]);
 
-export function resolveTaskColumn(thread: EnvironmentThreadShell, now: string): TaskColumn {
+export function resolveTaskStatus(thread: EnvironmentThreadShell, now: string): TaskStatus {
   if (thread.settledOverride === "settled") return "done";
   if (effectiveSnoozed(thread, { now })) return "snoozed";
   const status = resolveSidebarThreadStatus(thread);
@@ -77,14 +91,13 @@ export function resolveTaskColumn(thread: EnvironmentThreadShell, now: string): 
     return "needs_you";
   }
   if (isProposal(thread)) return "proposed";
-  if (thread.runtime === null && thread.latestRun === null) return "todo";
   if (
     (thread.runtime !== null && ACTIVE_RUNTIME.has(thread.runtime.status)) ||
     thread.pendingBackgroundTasks.length > 0
   ) {
-    return "in_progress";
+    return "working";
   }
-  return "in_review";
+  return "review";
 }
 
 /** Subtasks are the threads a task delegated work to. Provider-native subagents and side chats stay inside their thread. */
@@ -140,7 +153,7 @@ export function buildTaskTree(
     return {
       key,
       thread,
-      column: resolveTaskColumn(thread, now),
+      status: resolveTaskStatus(thread, now),
       subtasks: (childrenByParent.get(key) ?? [])
         .filter((child) => !nextSeen.has(taskKey(child)))
         .toSorted(byCreatedAt)
@@ -158,11 +171,11 @@ function byRecentActivity(a: EnvironmentThreadShell, b: EnvironmentThreadShell):
   return b.updatedAt.localeCompare(a.updatedAt);
 }
 
-export function groupTasksByColumn(
+export function groupTasksByStatus(
   tasks: ReadonlyArray<TaskNode>,
-): ReadonlyMap<TaskColumn, ReadonlyArray<TaskNode>> {
-  const groups = new Map<TaskColumn, TaskNode[]>(TASK_COLUMNS.map((column) => [column, []]));
-  for (const task of tasks) groups.get(task.column)!.push(task);
+): ReadonlyMap<TaskStatus, ReadonlyArray<TaskNode>> {
+  const groups = new Map<TaskStatus, TaskNode[]>(TASK_STATUSES.map((status) => [status, []]));
+  for (const task of tasks) groups.get(task.status)!.push(task);
   return groups;
 }
 
@@ -178,7 +191,7 @@ export function subtaskProgress(task: TaskNode): SubtaskProgress {
   const visit = (node: TaskNode) => {
     for (const subtask of node.subtasks) {
       total += 1;
-      if (subtask.column === "done" || subtask.column === "in_review") done += 1;
+      if (subtask.status === "done" || subtask.status === "review") done += 1;
       visit(subtask);
     }
   };

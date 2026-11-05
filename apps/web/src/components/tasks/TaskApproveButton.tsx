@@ -20,7 +20,7 @@ const nowIso = () => new Date().toISOString();
  */
 export function canApproveTask(task: TaskNode): boolean {
   return (
-    task.column === "proposed" &&
+    task.status === "proposed" &&
     (task.thread.hasActionableProposedPlan || task.thread.latestRun !== null) &&
     (task.thread.runtime === null ||
       !["preparing", "queued", "starting", "running", "waiting"].includes(

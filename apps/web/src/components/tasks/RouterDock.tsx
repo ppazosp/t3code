@@ -14,7 +14,7 @@ import { BackgroundThreadContext } from "../chat/backgroundThread";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { TaskStatusPill } from "./TaskPresentation";
-import { resolveTaskColumn } from "./tasks.logic";
+import { resolveTaskStatus } from "./tasks.logic";
 
 const EXPANDED_HEIGHT = "min(30rem, 55dvh)";
 
@@ -40,7 +40,7 @@ export function RouterDock({
   const task = {
     key: router.id,
     thread: router,
-    column: resolveTaskColumn(router, now),
+    status: resolveTaskStatus(router, now),
     subtasks: [],
   };
 

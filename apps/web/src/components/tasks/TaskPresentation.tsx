@@ -3,7 +3,6 @@ import {
   AlarmClockIcon,
   CircleAlertIcon,
   CircleCheckIcon,
-  CircleDashedIcon,
   CircleDotIcon,
   ClockIcon,
   EllipsisIcon,
@@ -28,33 +27,32 @@ import { resolveThreadStatusPill } from "../Sidebar.logic";
 import {
   slackOriginOf,
   subtaskProgress,
-  TASK_COLUMN_LABELS,
-  type TaskColumn,
+  TASK_STATUS_LABELS,
+  type TaskStatus,
   type TaskNode,
 } from "./tasks.logic";
 import type { TaskActions } from "./useTaskActions";
 
-const COLUMN_GLYPHS: Record<TaskColumn, { Icon: LucideIcon; className: string }> = {
+const STATUS_GLYPHS: Record<TaskStatus, { Icon: LucideIcon; className: string }> = {
   proposed: { Icon: LightbulbIcon, className: "text-primary" },
-  todo: { Icon: CircleDashedIcon, className: "text-muted-foreground" },
-  in_progress: { Icon: CircleDotIcon, className: "text-info" },
   needs_you: { Icon: CircleAlertIcon, className: "text-warning" },
-  in_review: { Icon: EyeIcon, className: "text-success" },
+  review: { Icon: EyeIcon, className: "text-success" },
+  working: { Icon: CircleDotIcon, className: "text-info" },
   done: { Icon: CircleCheckIcon, className: "text-muted-foreground" },
   snoozed: { Icon: AlarmClockIcon, className: "text-muted-foreground" },
 };
 
-export function TaskColumnGlyph({ column, className }: { column: TaskColumn; className?: string }) {
-  const { Icon, className: colorClass } = COLUMN_GLYPHS[column];
+export function TaskStatusGlyph({ status, className }: { status: TaskStatus; className?: string }) {
+  const { Icon, className: colorClass } = STATUS_GLYPHS[status];
   return (
     <Icon
-      aria-label={TASK_COLUMN_LABELS[column]}
+      aria-label={TASK_STATUS_LABELS[status]}
       className={cn("size-3.5 shrink-0", colorClass, className)}
     />
   );
 }
 
-/** The thread's own status pill, the same one the sidebar shows, when it says more than the column. */
+/** The thread's own status pill, the same one the sidebar shows, when it says more than the status. */
 export function TaskStatusPill({ task }: { task: TaskNode }) {
   const pill = resolveThreadStatusPill({ thread: task.thread });
   if (pill === null) return null;
@@ -220,7 +218,7 @@ export function TaskQuickActions({
   className?: string;
 }) {
   if (!actions.canOperate(task)) return null;
-  const done = task.column === "done";
+  const done = task.status === "done";
   return (
     <span
       className={cn(
@@ -236,7 +234,7 @@ export function TaskQuickActions({
       </QuickAction>
       {done ? null : (
         <QuickAction
-          label={task.column === "snoozed" ? "Wake" : "Snooze"}
+          label={task.status === "snoozed" ? "Wake" : "Snooze"}
           onClick={(event) => void actions.openSnoozeMenu(task, anchorOf(event))}
         >
           <ClockIcon />

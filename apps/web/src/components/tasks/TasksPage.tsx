@@ -2,6 +2,7 @@ import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environ
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/models";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import {
+  ArchiveIcon,
   ChartNoAxesColumnIcon,
   ChevronDownIcon,
   KanbanIcon,
@@ -27,7 +28,8 @@ import { InputGroup, InputGroupAddon, InputGroupInput } from "../ui/input-group"
 import { Kbd } from "../ui/kbd";
 import { Menu, MenuItem, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "../ui/menu";
 import { SidebarInset } from "../ui/sidebar";
-import { Toggle, ToggleGroup } from "../ui/toggle-group";
+import { Toggle as GroupToggle, ToggleGroup } from "../ui/toggle-group";
+import { Toggle } from "../ui/toggle";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { WorkspaceBreadcrumb, WorkspaceBreadcrumbItem } from "../WorkspaceBreadcrumb";
 import { WorkspacePageContainer } from "../WorkspacePageContainer";
@@ -37,11 +39,12 @@ import { RouterSetup } from "./RouterSetup";
 import { TaskBoard } from "./TaskBoard";
 import { TaskList } from "./TaskList";
 import {
+  BOARD_COLUMNS,
   buildTaskTree,
-  groupTasksByColumn,
+  groupTasksByStatus,
   isRouterThread,
   matchesTaskQuery,
-  TASK_COLUMNS,
+  TASK_STATUSES,
   type TaskNode,
 } from "./tasks.logic";
 import { useTaskActions } from "./useTaskActions";
@@ -49,6 +52,7 @@ import { useTaskFamilies } from "./useTaskFamilies";
 
 export interface TasksSearch {
   readonly view?: "board" | "list" | undefined;
+  readonly done?: boolean | undefined;
   readonly project?: string | undefined;
   readonly q?: string | undefined;
 }
@@ -103,18 +107,30 @@ export function TasksPage() {
           projectFilter) &&
       matchesTaskQuery(task, query),
   );
-  const grouped = groupTasksByColumn(tasks);
-  const columns = TASK_COLUMNS.map((column) => ({ column, tasks: grouped.get(column) ?? [] }))
-    // Snoozed work stays out of the way until something is snoozed.
-    .filter(({ column, tasks: inColumn }) => column !== "snoozed" || inColumn.length > 0);
-  // Keyboard order follows what is on screen: down each column on the board, down the list.
-  const ordered = columns.flatMap(({ tasks: inColumn }) =>
-    view === "list"
-      ? inColumn.flatMap(function walk(task): TaskNode[] {
-          return [task, ...task.subtasks.flatMap(walk)];
-        })
-      : inColumn,
+  const showDone = search.done === true;
+  const grouped = groupTasksByStatus(tasks);
+  // Like T3's sidebar, finished and snoozed work stays out of the way until asked for.
+  const shownStatuses = TASK_STATUSES.filter(
+    (status) => showDone || (status !== "done" && status !== "snoozed"),
   );
+  const sections = shownStatuses.map((status) => ({ status, tasks: grouped.get(status) ?? [] }));
+  const columns = BOARD_COLUMNS.filter((column) => showDone || column.id !== "done").map(
+    (column) => ({
+      id: column.id,
+      label: column.label,
+      tasks: column.statuses.flatMap((status) => grouped.get(status) ?? []),
+    }),
+  );
+  const hiddenCount = (grouped.get("done")?.length ?? 0) + (grouped.get("snoozed")?.length ?? 0);
+  // Keyboard order follows what is on screen: down each column on the board, down the list.
+  const ordered =
+    view === "list"
+      ? sections.flatMap(({ tasks: inStatus }) =>
+          inStatus.flatMap(function walk(task): TaskNode[] {
+            return [task, ...task.subtasks.flatMap(walk)];
+          }),
+        )
+      : columns.flatMap((column) => column.tasks);
 
   const openTask = (task: TaskNode) =>
     void navigate({
@@ -240,15 +256,25 @@ export function TasksPage() {
                 if (layout === "board" || layout === "list") updateSearch({ view: layout });
               }}
             >
-              <Toggle value="board" aria-label="Board">
+              <GroupToggle value="board" aria-label="Board">
                 <KanbanIcon />
                 Board
-              </Toggle>
-              <Toggle value="list" aria-label="List">
+              </GroupToggle>
+              <GroupToggle value="list" aria-label="List">
                 <ListIcon />
                 List
-              </Toggle>
+              </GroupToggle>
             </ToggleGroup>
+            <Toggle
+              variant="outline"
+              aria-label="Show done"
+              pressed={showDone}
+              onPressedChange={(pressed) => updateSearch({ done: pressed || undefined })}
+            >
+              <ArchiveIcon />
+              Done
+              <span className="tabular-nums text-muted-foreground">{hiddenCount}</span>
+            </Toggle>
             <Menu>
               <MenuTrigger
                 render={<Button variant="outline" />}
@@ -283,7 +309,7 @@ export function TasksPage() {
                 <p className="px-3 text-sm text-muted-foreground">No tasks yet.</p>
               ) : (
                 <TaskList
-                  columns={columns}
+                  sections={sections}
                   projectOf={projectOf}
                   actions={actions}
                   selectedKey={selectedKey}

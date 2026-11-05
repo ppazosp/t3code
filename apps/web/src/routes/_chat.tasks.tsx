@@ -5,6 +5,7 @@ import { TasksPage, type TasksSearch } from "../components/tasks/TasksPage";
 export const Route = createFileRoute("/_chat/tasks")({
   validateSearch: (raw: Record<string, unknown>): TasksSearch => ({
     ...(raw.view === "board" || raw.view === "list" ? { view: raw.view } : {}),
+    ...(raw.done === true || raw.done === "true" ? { done: true } : {}),
     ...(typeof raw.project === "string" && raw.project
       ? { project: raw.project.slice(0, 200) }
       : {}),

@@ -2,7 +2,7 @@ import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/model
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { buildTaskTree, resolveTaskColumn, subtaskProgress, type TaskNode } from "./tasks.logic";
+import { buildTaskTree, resolveTaskStatus, subtaskProgress, type TaskNode } from "./tasks.logic";
 
 const NOW = "2026-11-04T12:00:00.000Z";
 const environmentId = EnvironmentId.make("env");
@@ -50,11 +50,11 @@ const running = { status: "running", activeRunId: "run", updatedAt: NOW } as nev
 const completed = { status: "completed", activeRunId: null, updatedAt: NOW } as never;
 const finishedRun = { status: "completed", completedAt: NOW } as never;
 
-describe("resolveTaskColumn", () => {
+describe("resolveTaskStatus", () => {
   it.each([
-    ["todo", shell("a")],
-    ["in_progress", shell("a", { runtime: running })],
-    ["in_review", shell("a", { runtime: completed, latestRun: finishedRun })],
+    ["review", shell("a")],
+    ["working", shell("a", { runtime: running })],
+    ["review", shell("a", { runtime: completed, latestRun: finishedRun })],
     ["needs_you", shell("a", { runtime: running, hasPendingApprovals: true })],
     ["proposed", shell("a", { interactionMode: "plan", runtime: running })],
     ["needs_you", shell("a", { interactionMode: "plan", hasPendingUserInput: true })],
@@ -62,8 +62,8 @@ describe("resolveTaskColumn", () => {
     ["proposed", shell("a", { tags: ["proposal"], runtime: completed, latestRun: finishedRun })],
     ["done", shell("a", { settledOverride: "settled", runtime: running })],
     ["snoozed", shell("a", { snoozedUntil: "2026-11-05T00:00:00.000Z" })],
-  ] as const)("puts the thread in %s", (column, thread) => {
-    expect(resolveTaskColumn(thread, NOW)).toBe(column);
+  ] as const)("puts the thread in %s", (status, thread) => {
+    expect(resolveTaskStatus(thread, NOW)).toBe(status);
   });
 });
 

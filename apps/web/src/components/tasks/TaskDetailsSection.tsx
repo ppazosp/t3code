@@ -14,16 +14,16 @@ import {
 } from "../chat/threadDetailsPanelStyles";
 import { Menu, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "../ui/menu";
 import { canApproveTask, TaskApproveButton } from "./TaskApproveButton";
-import { TaskColumnGlyph, TaskStatusPill, TaskSubtaskCount } from "./TaskPresentation";
+import { TaskStatusGlyph, TaskStatusPill, TaskSubtaskCount } from "./TaskPresentation";
 import {
   buildTaskTree,
   findTask,
-  TASK_COLUMN_LABELS,
-  TASK_COLUMNS,
-  type TaskColumn,
+  TASK_STATUS_LABELS,
+  TASK_STATUSES,
+  type TaskStatus,
   type TaskNode,
 } from "./tasks.logic";
-import { SETTABLE_TASK_COLUMNS, useTaskActions } from "./useTaskActions";
+import { SETTABLE_TASK_STATUSES, useTaskActions } from "./useTaskActions";
 
 /**
  * The thread as a task, at the top of its details panel: its status, which the user can change
@@ -67,25 +67,25 @@ export function TaskDetailsSection({
             render={<ThreadDetailsControl part="row" />}
             disabled={!actions.canOperate(task)}
           >
-            <TaskColumnGlyph column={task.column} className="size-4" />
+            <TaskStatusGlyph status={task.status} className="size-4" />
             <span className={THREAD_DETAILS_PANEL_LABEL_CLASS}>
-              {TASK_COLUMN_LABELS[task.column]}
+              {TASK_STATUS_LABELS[task.status]}
             </span>
           </MenuTrigger>
           <MenuPopup align="start" side="bottom">
             <MenuRadioGroup
-              value={task.column}
-              onValueChange={(next) => void actions.moveTask(task, next as TaskColumn)}
+              value={task.status}
+              onValueChange={(next) => void actions.moveTask(task, next as TaskStatus)}
             >
-              {TASK_COLUMNS.filter((column) => column !== "snoozed").map((column) => (
+              {TASK_STATUSES.filter((status) => status !== "snoozed").map((status) => (
                 <MenuRadioItem
-                  key={column}
-                  value={column}
-                  disabled={column !== task.column && !SETTABLE_TASK_COLUMNS.has(column)}
+                  key={status}
+                  value={status}
+                  disabled={status !== task.status && !SETTABLE_TASK_STATUSES.has(status)}
                 >
                   <span className="flex items-center gap-2">
-                    <TaskColumnGlyph column={column} />
-                    {TASK_COLUMN_LABELS[column]}
+                    <TaskStatusGlyph status={status} />
+                    {TASK_STATUS_LABELS[status]}
                   </span>
                 </MenuRadioItem>
               ))}
@@ -108,7 +108,7 @@ export function TaskDetailsSection({
             </div>
             {task.subtasks.map((subtask) => (
               <ThreadDetailsControl key={subtask.key} part="row" onClick={() => open(subtask)}>
-                <TaskColumnGlyph column={subtask.column} className="size-4" />
+                <TaskStatusGlyph status={subtask.status} className="size-4" />
                 <span className={`truncate ${THREAD_DETAILS_PANEL_LABEL_CLASS}`}>
                   {subtask.thread.title}
                 </span>
