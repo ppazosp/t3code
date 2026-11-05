@@ -14,11 +14,14 @@ const APPROVAL_MESSAGE = "The user approved your plan. Implement it now.";
 
 const nowIso = () => new Date().toISOString();
 
-/** A proposal waits on a finished plan; approving it is the only way it starts work. */
+/**
+ * A proposal waits for approval once its worker has stopped: with a plan, or with a question or
+ * a report instead of one. Approving it is the only way it starts work.
+ */
 export function canApproveTask(task: TaskNode): boolean {
   return (
     task.column === "proposed" &&
-    task.thread.hasActionableProposedPlan &&
+    (task.thread.hasActionableProposedPlan || task.thread.latestRun !== null) &&
     (task.thread.runtime === null ||
       !["preparing", "queued", "starting", "running", "waiting"].includes(
         task.thread.runtime.status,

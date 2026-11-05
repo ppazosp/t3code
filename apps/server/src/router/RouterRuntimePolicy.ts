@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import { RuntimePolicyV2 } from "../orchestration-v2/RuntimePolicy.ts";
+import { isProposalThread } from "./RouterProposals.ts";
 
 export function isRouterThread(thread: { readonly tags?: ReadonlyArray<string> | undefined }) {
   return thread.tags?.includes(ROUTER_TAG) === true;
@@ -39,9 +40,10 @@ export const ROUTER_TOOLS: ReadonlyArray<string> = [
 ];
 
 /**
- * The router only reads and delegates. Its own turns run read-only and never ask for approval,
- * and it gets only the T3 tools it needs, which run without asking. The sandbox and approval policy are Codex's; other providers ignore them, so there the
- * router's instructions are the only limit.
+ * The router only reads and delegates, and a proposal only reads and plans until it is approved.
+ * Both run read-only and never ask for approval; the router also gets only the T3 tools it needs,
+ * which run without asking. The sandbox and approval policy are Codex's; other providers ignore
+ * them, so there the instructions and T3's tool checks are the only limits.
  */
 export const layer: Layer.Layer<RuntimePolicyV2, never, RuntimePolicyV2> = Layer.effect(
   RuntimePolicyV2,
@@ -50,6 +52,14 @@ export const layer: Layer.Layer<RuntimePolicyV2, never, RuntimePolicyV2> = Layer
     return RuntimePolicyV2.of({
       resolve: Effect.fn("RouterRuntimePolicy.resolve")(function* (input) {
         const policy = yield* base.resolve(input);
+        // A proposal reads and plans; plan mode alone does not stop Codex from editing its worktree.
+        if (isProposalThread(input.thread) && !isRouterThread(input.thread)) {
+          return ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+            ...policy,
+            approvalPolicy: "never",
+            sandboxPolicy: { type: "readOnly" },
+          });
+        }
         if (!isRouterThread(input.thread)) return policy;
         return ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
           ...policy,
