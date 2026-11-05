@@ -2,7 +2,6 @@ import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environ
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/models";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import {
-  ArchiveIcon,
   ChartNoAxesColumnIcon,
   ChevronDownIcon,
   KanbanIcon,
@@ -14,6 +13,7 @@ import {
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { isElectron } from "~/env";
+import { cn } from "~/lib/utils";
 import type { ChatComposerHandle } from "../chat/ChatComposer";
 import { useNewThreadHandler } from "../../hooks/useHandleNewThread";
 import { useNowMinute } from "../../hooks/useNowMinute";
@@ -29,30 +29,32 @@ import { Kbd } from "../ui/kbd";
 import { Menu, MenuItem, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "../ui/menu";
 import { SidebarInset } from "../ui/sidebar";
 import { Toggle as GroupToggle, ToggleGroup } from "../ui/toggle-group";
-import { Toggle } from "../ui/toggle";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { WorkspaceBreadcrumb, WorkspaceBreadcrumbItem } from "../WorkspaceBreadcrumb";
 import { WorkspacePageContainer } from "../WorkspacePageContainer";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
-import { RouterDock } from "./RouterDock";
+import { RouterPanel } from "./RouterPanel";
 import { RouterSetup } from "./RouterSetup";
 import { TaskBoard } from "./TaskBoard";
 import { TaskList } from "./TaskList";
 import {
   BOARD_COLUMNS,
+  type BoardColumnId,
   buildTaskTree,
   groupTasksByStatus,
+  HIDDEN_COLUMNS,
+  HIDDEN_STATUSES,
   isRouterThread,
   matchesTaskQuery,
   TASK_STATUSES,
   type TaskNode,
+  type TaskStatus,
 } from "./tasks.logic";
 import { useTaskActions } from "./useTaskActions";
 import { useTaskFamilies } from "./useTaskFamilies";
 
 export interface TasksSearch {
   readonly view?: "board" | "list" | undefined;
-  readonly done?: boolean | undefined;
   readonly project?: string | undefined;
   readonly q?: string | undefined;
 }
@@ -88,6 +90,8 @@ export function TasksPage() {
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
   const composerRef = useRef<ChatComposerHandle | null>(null);
+  const [routerOpen, setRouterOpen] = useState(false);
+  const [unfolded, setUnfolded] = useState<ReadonlySet<TaskStatus>>(new Set());
   useTaskFamilies(threads);
 
   const updateSearch = (next: Partial<TasksSearch>) =>
@@ -107,26 +111,33 @@ export function TasksPage() {
           projectFilter) &&
       matchesTaskQuery(task, query),
   );
-  const showDone = search.done === true;
   const grouped = groupTasksByStatus(tasks);
-  // Like T3's sidebar, finished and snoozed work stays out of the way until asked for.
-  const shownStatuses = TASK_STATUSES.filter(
-    (status) => showDone || (status !== "done" && status !== "snoozed"),
-  );
-  const sections = shownStatuses.map((status) => ({ status, tasks: grouped.get(status) ?? [] }));
-  const columns = BOARD_COLUMNS.filter((column) => showDone || column.id !== "done").map(
-    (column) => ({
-      id: column.id,
-      label: column.label,
-      tasks: column.statuses.flatMap((status) => grouped.get(status) ?? []),
-    }),
-  );
-  const hiddenCount = (grouped.get("done")?.length ?? 0) + (grouped.get("snoozed")?.length ?? 0);
+  const sections = TASK_STATUSES.map((status) => ({
+    status,
+    tasks: grouped.get(status) ?? [],
+    folded: HIDDEN_STATUSES.has(status) && !unfolded.has(status),
+  }));
+  const toggleFolded = (status: TaskStatus) => {
+    const next = new Set(unfolded);
+    if (!next.delete(status)) next.add(status);
+    setUnfolded(next);
+  };
+  const toColumn = (column: {
+    id: BoardColumnId;
+    label: string;
+    statuses: ReadonlyArray<TaskStatus>;
+  }) => ({
+    id: column.id,
+    label: column.label,
+    tasks: column.statuses.flatMap((status) => grouped.get(status) ?? []),
+  });
+  const columns = BOARD_COLUMNS.map(toColumn);
+  const hiddenColumns = HIDDEN_COLUMNS.map(toColumn);
   // Keyboard order follows what is on screen: down each column on the board, down the list.
   const ordered =
     view === "list"
-      ? sections.flatMap(({ tasks: inStatus }) =>
-          inStatus.flatMap(function walk(task): TaskNode[] {
+      ? sections.flatMap(({ tasks: inStatus, folded }) =>
+          (folded ? [] : inStatus).flatMap(function walk(task): TaskNode[] {
             return [task, ...task.subtasks.flatMap(walk)];
           }),
         )
@@ -179,8 +190,11 @@ export function TasksPage() {
           searchRef.current?.focus();
           return;
         case "c":
+          if (router === null) return;
           event.preventDefault();
-          composerRef.current?.focusAtEnd();
+          setRouterOpen(true);
+          // The panel shows on the next frame; its composer can take focus after that.
+          requestAnimationFrame(() => composerRef.current?.focusAtEnd());
           return;
         default:
           return;
@@ -192,8 +206,12 @@ export function TasksPage() {
 
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none">
-      <div className="flex min-h-0 flex-1 flex-col bg-background">
-        <WorkspacePageHeader electron={isElectron} className="bg-background">
+      <div className="relative flex min-h-0 flex-1 flex-col bg-background">
+        {/* With no sidebar here, the title clears the window buttons itself. */}
+        <WorkspacePageHeader
+          electron={isElectron}
+          className={cn("bg-background", isElectron && "pl-(--workspace-controls-left)")}
+        >
           <WorkspaceBreadcrumb ariaLabel="Tasks breadcrumb">
             <WorkspaceBreadcrumbItem current>
               <h1 className="truncate">Tasks</h1>
@@ -265,16 +283,6 @@ export function TasksPage() {
                 List
               </GroupToggle>
             </ToggleGroup>
-            <Toggle
-              variant="outline"
-              aria-label="Show done"
-              pressed={showDone}
-              onPressedChange={(pressed) => updateSearch({ done: pressed || undefined })}
-            >
-              <ArchiveIcon />
-              Done
-              <span className="tabular-nums text-muted-foreground">{hiddenCount}</span>
-            </Toggle>
             <Menu>
               <MenuTrigger
                 render={<Button variant="outline" />}
@@ -297,6 +305,7 @@ export function TasksPage() {
         {view === "board" ? (
           <TaskBoard
             columns={columns}
+            hiddenColumns={hiddenColumns}
             projectOf={projectOf}
             actions={actions}
             selectedKey={selectedKey}
@@ -310,6 +319,7 @@ export function TasksPage() {
               ) : (
                 <TaskList
                   sections={sections}
+                  onToggleFolded={toggleFolded}
                   projectOf={projectOf}
                   actions={actions}
                   selectedKey={selectedKey}
@@ -320,7 +330,13 @@ export function TasksPage() {
           </div>
         )}
         {router === null ? null : (
-          <RouterDock router={router} now={now} composerRef={composerRef} />
+          <RouterPanel
+            router={router}
+            now={now}
+            composerRef={composerRef}
+            open={routerOpen}
+            onOpenChange={setRouterOpen}
+          />
         )}
       </div>
     </SidebarInset>

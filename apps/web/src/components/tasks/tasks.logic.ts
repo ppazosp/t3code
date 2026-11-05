@@ -39,16 +39,31 @@ export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
  * The board's columns. Everything waiting on the user shares one column, most urgent first, with
  * running work at its foot; done and snoozed tasks stay hidden until the user asks for them.
  */
-export const BOARD_COLUMNS = [
-  { id: "proposed", label: "Proposed", statuses: ["proposed"] },
-  { id: "now", label: "Needs you", statuses: ["needs_you", "review", "working"] },
-  { id: "done", label: "Done", statuses: ["done", "snoozed"] },
-] as const satisfies ReadonlyArray<{
+interface ColumnDefinition {
   readonly id: string;
   readonly label: string;
   readonly statuses: ReadonlyArray<TaskStatus>;
-}>;
-export type BoardColumnId = (typeof BOARD_COLUMNS)[number]["id"];
+}
+
+export const BOARD_COLUMNS = [
+  { id: "proposed", label: "Proposed", statuses: ["proposed"] },
+  { id: "now", label: "Needs you", statuses: ["needs_you", "review", "working"] },
+] as const satisfies ReadonlyArray<ColumnDefinition>;
+
+/** Work that no longer needs the user, listed beside the board and opened on demand. */
+export const HIDDEN_COLUMNS = [
+  { id: "done", label: "Done", statuses: ["done"] },
+  { id: "snoozed", label: "Snoozed", statuses: ["snoozed"] },
+] as const satisfies ReadonlyArray<ColumnDefinition>;
+
+export type BoardColumnId =
+  | (typeof BOARD_COLUMNS)[number]["id"]
+  | (typeof HIDDEN_COLUMNS)[number]["id"];
+
+/** Statuses the list shows folded, as the board hides them. */
+export const HIDDEN_STATUSES: ReadonlySet<TaskStatus> = new Set(
+  HIDDEN_COLUMNS.flatMap((column) => column.statuses),
+);
 
 export interface TaskNode {
   readonly key: string;

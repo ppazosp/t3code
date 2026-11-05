@@ -400,6 +400,16 @@ function SidebarControl() {
   );
 }
 
+/** The shell's commands where no sidebar control carries them, as on the task board. */
+function AppShellCommands() {
+  const router = useRouter();
+  const [ref] = useState(
+    () => (node: HTMLDivElement | null) =>
+      node === null ? undefined : registerAppShellCommands(router, node),
+  );
+  return <div ref={ref} hidden />;
+}
+
 export function AppSidebarLayout({ children }: { children: ReactNode }) {
   const sidebarArea = workspaceAreaProps("sidebar", 0, "Threads");
   const { active: panelAnimationsActive, durationMs: panelAnimationDurationMs } =
@@ -473,7 +483,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
         )}
         {children}
         <BackgroundThreadAnnouncer />
-        {onTaskBoard ? null : <SidebarControl />}
+        {onTaskBoard ? <AppShellCommands /> : <SidebarControl />}
         {isElectron ? <HistorySwipeNavigation /> : null}
       </SidebarProvider>
     </PanelAnimationSuppressionProvider>

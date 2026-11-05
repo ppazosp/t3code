@@ -1,13 +1,10 @@
 import { PROPOSAL_TAG, type ThreadTag } from "@t3tools/contracts";
-import { ChevronDownIcon } from "lucide-react";
 import { useState } from "react";
 
 import { newMessageId } from "~/lib/utils";
 import { threadEnvironment } from "../../state/threads";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { Button } from "../ui/button";
-import { Group, GroupSeparator } from "../ui/group";
-import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import type { TaskNode } from "./tasks.logic";
 
 const APPROVAL_MESSAGE = "The user approved your plan. Implement it now.";
@@ -31,8 +28,7 @@ export function canApproveTask(task: TaskNode): boolean {
 
 /**
  * Approves a proposed task's plan from the board, which works whether or not the plan follow-up
- * is enabled in the chat. Approve keeps the mode the proposal planned in: edits inside its own
- * workspace, no network. Full access is for work that needs more, such as pushing.
+ * is enabled in the chat. Approved work runs with full access, so it can push and use the network.
  */
 export function TaskApproveButton({ task }: { task: TaskNode }) {
   const setInteractionMode = useOrchestrationCommand(threadEnvironment.setInteractionMode);
@@ -42,10 +38,10 @@ export function TaskApproveButton({ task }: { task: TaskNode }) {
   const [approving, setApproving] = useState(false);
   const { environmentId, id: threadId } = task.thread;
 
-  const approve = async (fullAccess: boolean) => {
+  const approve = async () => {
     if (approving) return;
     setApproving(true);
-    const runtimeMode = fullAccess ? "full-access" : task.thread.runtimeMode;
+    const runtimeMode = "full-access";
     const steps = [
       // Approval lifts the proposal's limits: it may now delegate and message other threads.
       () =>
@@ -53,9 +49,7 @@ export function TaskApproveButton({ task }: { task: TaskNode }) {
           environmentId,
           input: { threadId, tag: PROPOSAL_TAG as ThreadTag, tagged: false },
         }),
-      ...(fullAccess
-        ? [() => setRuntimeMode({ environmentId, input: { threadId, runtimeMode } })]
-        : []),
+      () => setRuntimeMode({ environmentId, input: { threadId, runtimeMode } }),
       () => setInteractionMode({ environmentId, input: { threadId, interactionMode: "default" } }),
       () =>
         startTurn({
@@ -82,23 +76,8 @@ export function TaskApproveButton({ task }: { task: TaskNode }) {
   };
 
   return (
-    <Group className="relative z-10">
-      <Button size="xs" disabled={approving} onClick={() => void approve(false)}>
-        {approving ? "Approving…" : "Approve"}
-      </Button>
-      <GroupSeparator />
-      <Menu>
-        <MenuTrigger
-          render={<Button size="icon-xs" />}
-          aria-label="More ways to approve"
-          disabled={approving}
-        >
-          <ChevronDownIcon />
-        </MenuTrigger>
-        <MenuPopup align="end" side="bottom">
-          <MenuItem onClick={() => void approve(true)}>Approve with full access</MenuItem>
-        </MenuPopup>
-      </Menu>
-    </Group>
+    <Button size="xs" className="relative z-10" disabled={approving} onClick={() => void approve()}>
+      {approving ? "Approving…" : "Approve"}
+    </Button>
   );
 }

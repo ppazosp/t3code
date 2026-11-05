@@ -17,17 +17,19 @@ import {
   TaskTitle,
   TaskUpdatedAt,
 } from "./TaskPresentation";
-import { TASK_STATUS_LABELS, type TaskStatus, type TaskNode } from "./tasks.logic";
+import { HIDDEN_STATUSES, TASK_STATUS_LABELS, type TaskStatus, type TaskNode } from "./tasks.logic";
 import type { TaskActions } from "./useTaskActions";
 
 export function TaskList({
   sections,
+  onToggleFolded,
   projectOf,
   actions,
   selectedKey,
   onOpen,
 }: {
-  sections: ReadonlyArray<{ status: TaskStatus; tasks: ReadonlyArray<TaskNode> }>;
+  sections: ReadonlyArray<{ status: TaskStatus; tasks: ReadonlyArray<TaskNode>; folded: boolean }>;
+  onToggleFolded: (status: TaskStatus) => void;
   projectOf: (task: TaskNode) => EnvironmentProject | undefined;
   actions: TaskActions;
   selectedKey: string | null;
@@ -37,15 +39,28 @@ export function TaskList({
     <div className="space-y-4">
       {sections
         .filter(({ tasks }) => tasks.length > 0)
-        .map(({ status, tasks }) => (
+        .map(({ status, tasks, folded }) => (
           <section key={status} aria-label={TASK_STATUS_LABELS[status]} className="space-y-0.5">
             <header className="flex items-center gap-2 px-3 pb-1 text-xs font-medium text-muted-foreground/70">
+              {HIDDEN_STATUSES.has(status) ? (
+                <button
+                  type="button"
+                  aria-expanded={!folded}
+                  aria-label={`${folded ? "Show" : "Hide"} ${TASK_STATUS_LABELS[status]}`}
+                  onClick={() => onToggleFolded(status)}
+                  className="inline-flex size-4 shrink-0 items-center justify-center rounded-sm outline-hidden hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                >
+                  <ChevronRightIcon
+                    className={cn("size-3.5 transition-transform", !folded && "rotate-90")}
+                  />
+                </button>
+              ) : null}
               <TaskStatusGlyph status={status} />
               <h2 className="shrink-0">{TASK_STATUS_LABELS[status]}</h2>
               <span className="shrink-0 tabular-nums text-muted-foreground/50">{tasks.length}</span>
               <Separator className="min-w-2 flex-1" />
             </header>
-            {tasks.map((task) => (
+            {(folded ? [] : tasks).map((task) => (
               <TaskRow
                 key={task.key}
                 task={task}
