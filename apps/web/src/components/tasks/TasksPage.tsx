@@ -10,7 +10,7 @@ import {
   SearchIcon,
   SettingsIcon,
 } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
 import { isElectron } from "~/env";
 import { cn } from "~/lib/utils";
@@ -90,6 +90,7 @@ export function TasksPage() {
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
   const composerRef = useRef<ChatComposerHandle | null>(null);
+  const [dockHeight, setDockHeight] = useState(0);
   const [unfolded, setUnfolded] = useState<ReadonlySet<TaskStatus>>(new Set());
   useTaskFamilies(threads);
 
@@ -202,7 +203,10 @@ export function TasksPage() {
 
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none">
-      <div className="relative flex min-h-0 flex-1 flex-col bg-background">
+      <div
+        className="relative flex min-h-0 flex-1 flex-col bg-background"
+        style={{ "--router-dock-space": `${dockHeight}px` } as CSSProperties}
+      >
         {/* With no sidebar here, the title clears the window buttons itself. */}
         <WorkspacePageHeader
           electron={isElectron}
@@ -309,7 +313,10 @@ export function TasksPage() {
           />
         ) : (
           <div className="topbar-scroll-fade scrollbar-gutter-both min-h-0 flex-1 overflow-y-auto">
-            <WorkspacePageContainer width="expanded" className="max-w-none pt-2">
+            <WorkspacePageContainer
+              width="expanded"
+              className="max-w-none pt-2 pb-(--router-dock-space)"
+            >
               {tasks.length === 0 ? (
                 <p className="px-3 text-sm text-muted-foreground">No tasks yet.</p>
               ) : (
@@ -326,7 +333,12 @@ export function TasksPage() {
           </div>
         )}
         {router === null ? null : (
-          <RouterDock router={router} now={now} composerRef={composerRef} />
+          <RouterDock
+            router={router}
+            now={now}
+            composerRef={composerRef}
+            onHeightChange={setDockHeight}
+          />
         )}
       </div>
     </SidebarInset>

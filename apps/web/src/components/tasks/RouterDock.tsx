@@ -15,12 +15,15 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { TaskStatusPill } from "./TaskPresentation";
 import { resolveTaskStatus } from "./tasks.logic";
 
+/** The row that names the router, on the composer's top edge. */
+const LABEL_HEIGHT = 30;
+
 /** How long after the user presses send their message may take to reach the router. */
 const SEND_WINDOW_MS = 30_000;
 
 /**
- * The router's own composer, docked under the board: T3's composer with its model, mode and
- * attachment controls. Only the composer shows. Once a message sent from here reaches the router,
+ * The router's own composer, floating over the bottom of the board: T3's composer with its model,
+ * mode and attachment controls. Only the composer shows. Once a message sent from here reaches the router,
  * its conversation opens like any other thread's. It runs as an embedded chat, so the board keeps
  * the keyboard and the page layout.
  */
@@ -28,14 +31,21 @@ export function RouterDock({
   router,
   now,
   composerRef,
+  onHeightChange,
 }: {
   router: EnvironmentThreadShell;
   now: string;
   composerRef: ComposerHandleRef;
+  /** The room the floating dock covers at the bottom of the board, in pixels. */
+  onHeightChange: (height: number) => void;
 }) {
   const navigate = useNavigate();
   const sentRef = useRef<{ at: number; since: string | null } | null>(null);
-  const [composerHeight, setComposerHeight] = useState<number | null>(null);
+  const [composer, setComposer] = useState<{
+    height: number;
+    left: number;
+    width: number;
+  } | null>(null);
   const chatRef = useRef<HTMLDivElement | null>(null);
   const routerRef = scopeThreadRef(router.environmentId, router.id);
   const task = {
@@ -66,16 +76,23 @@ export function RouterDock({
     if (Date.now() - sent.at < SEND_WINDOW_MS) openRouter();
   });
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- measures the composer ChatView renders late, so the collapsed dock fits it exactly
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- measures the composer ChatView renders late, so the dock fits it and its label sits on its edge
   useEffect(() => {
     const container = chatRef.current;
     if (container === null) return;
     let release: (() => void) | null = null;
     const attach = () => {
       const overlay = container.querySelector('[data-chat-composer-overlay="true"]');
-      if (overlay === null || release !== null) return;
+      const stack = container.querySelector('[data-chat-composer-stack="true"]');
+      if (overlay === null || stack === null || release !== null) return;
       release = observeResize(overlay, () => {
-        setComposerHeight(overlay.getBoundingClientRect().height);
+        const box = stack.getBoundingClientRect();
+        const origin = container.getBoundingClientRect();
+        setComposer({
+          height: overlay.getBoundingClientRect().height,
+          left: box.left - origin.left,
+          width: box.width,
+        });
       });
     };
     attach();
@@ -86,40 +103,50 @@ export function RouterDock({
       release?.();
     };
   }, []);
+  const height = composer === null ? null : composer.height + LABEL_HEIGHT;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- tells the board how much room to leave under its cards
+  useEffect(() => onHeightChange(height ?? 0), [height, onHeightChange]);
 
   return (
+    // The composer floats over the board; only it and its label take clicks.
     <section
       aria-label="Router"
-      className="flex shrink-0 flex-col border-t border-border/70 bg-background"
+      className="pointer-events-none absolute inset-x-0 bottom-0 z-20"
+      style={{ height: height === null ? "10rem" : `${height}px` }}
     >
-      <div className="flex h-9 shrink-0 items-center gap-2 pr-2 pl-4 text-xs sm:pl-6">
-        <RouteIcon aria-hidden className="size-3.5 text-muted-foreground" />
-        <span className="font-medium">Router</span>
-        <TaskStatusPill task={task} />
-        <span className="ml-auto flex items-center gap-0.5">
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  size="icon-xs"
-                  variant="ghost-muted"
-                  aria-label="Open the router's conversation"
-                  onClick={openRouter}
-                />
-              }
-            >
-              <SquareArrowOutUpRightIcon />
-            </TooltipTrigger>
-            <TooltipPopup side="top">Open conversation</TooltipPopup>
-          </Tooltip>
-        </span>
-      </div>
+      {composer === null ? null : (
+        <div
+          className="absolute top-0 flex items-end px-2"
+          style={{ left: composer.left, width: composer.width, height: LABEL_HEIGHT }}
+        >
+          <span className="pointer-events-auto flex h-6 items-center gap-1.5 rounded-full border border-border/70 bg-card pr-0.5 pl-2.5 text-xs shadow-xs/5">
+            <RouteIcon aria-hidden className="size-3.5 text-muted-foreground" />
+            <span className="font-medium">Router</span>
+            <TaskStatusPill task={task} />
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    size="icon-xs"
+                    variant="ghost-muted"
+                    aria-label="Open the router's conversation"
+                    onClick={openRouter}
+                  />
+                }
+              >
+                <SquareArrowOutUpRightIcon />
+              </TooltipTrigger>
+              <TooltipPopup side="top">Open conversation</TooltipPopup>
+            </Tooltip>
+          </span>
+        </div>
+      )}
       <div
         ref={chatRef}
         data-side-chat-pane
-        // Only the composer shows; the conversation opens in its own page.
-        className="relative flex min-h-0 flex-col overflow-hidden [&_[data-chat-workspace-drop-target]>:not([data-chat-composer-overlay])]:invisible"
-        style={{ height: composerHeight === null ? "9rem" : `${composerHeight}px` }}
+        // Only the composer shows, over the board; the conversation opens in its own page.
+        className="absolute inset-x-0 bottom-0 flex flex-col overflow-hidden *:bg-transparent [&_[data-chat-workspace-drop-target]>:not([data-chat-composer-overlay])]:invisible"
+        style={{ height: composer === null ? "9rem" : `${composer.height}px` }}
         onSubmitCapture={noteSend}
         onKeyDownCapture={(event) => {
           if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing)

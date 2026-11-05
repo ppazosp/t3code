@@ -92,7 +92,7 @@ export function TaskBoard({
           <section
             key={id}
             aria-label={label}
-            className="flex w-80 shrink-0 flex-col gap-2 xl:w-96"
+            className="flex w-72 shrink-0 flex-col gap-2 xl:w-80"
             {...dropTarget(id)}
           >
             <header className="flex h-7 items-center gap-2 px-1.5 text-xs font-medium">
@@ -100,7 +100,8 @@ export function TaskBoard({
               <h2 className="text-foreground">{label}</h2>
               <span className="tabular-nums text-muted-foreground/60">{urgent.length}</span>
             </header>
-            <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto rounded-xl bg-muted/30 p-1.5">
+            {/* The router's composer floats over the bottom; the last card can scroll above it. */}
+            <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto rounded-xl bg-muted/30 p-2 pb-(--router-dock-space)">
               {urgent.length === 0 ? (
                 <p className="px-2 py-3 text-xs text-muted-foreground/70">{EMPTY_TEXT[id]}</p>
               ) : (
@@ -137,7 +138,7 @@ export function TaskBoard({
           Hidden columns
         </button>
         {hiddenOpen ? (
-          <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto">
+          <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto pb-(--router-dock-space)">
             {hiddenColumns.map(({ id, label, tasks }) => {
               const open = openHidden === id;
               return (
@@ -244,7 +245,7 @@ function TaskCard({
         void actions.openMenu(task, { x: event.clientX, y: event.clientY });
       }}
       className={cn(
-        "group/task relative flex w-full flex-col gap-1.5 rounded-md border border-border/70 bg-card px-2.5 py-2 text-left shadow-xs/5",
+        "group/task relative flex min-h-28 w-full shrink-0 flex-col justify-between gap-2 rounded-lg border border-border/70 bg-card p-3 text-left shadow-xs/5",
         "hover:border-border hover:bg-accent/40",
         selected && "border-ring/60 ring-1 ring-ring/40",
         task.status === "done" && "opacity-70",
@@ -255,39 +256,42 @@ function TaskCard({
         type="button"
         aria-label={`Open ${task.thread.title}`}
         onClick={onOpen}
-        className="absolute inset-0 rounded-md outline-hidden ring-ring focus-visible:ring-2 focus-visible:ring-inset"
+        className="absolute inset-0 rounded-lg outline-hidden ring-ring focus-visible:ring-2 focus-visible:ring-inset"
       />
-      <span className="pointer-events-none flex min-w-0 items-start gap-2">
-        <TaskStatusGlyph status={task.status} className="mt-0.5" />
-        <TaskTitle
-          task={task}
-          actions={actions}
-          className="line-clamp-2 min-w-0 flex-1 text-sm leading-snug"
-        />
+      <span className="pointer-events-none flex min-w-0 flex-col gap-2">
+        <span className="flex min-w-0 items-start gap-2">
+          <TaskStatusGlyph status={task.status} className="mt-0.5" />
+          <TaskTitle
+            task={task}
+            actions={actions}
+            className="line-clamp-2 min-w-0 flex-1 text-sm leading-snug"
+          />
+        </span>
+        <span className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 pl-5.5">
+          <TaskStatusPill task={task} />
+          <TaskSubtaskCount task={task} />
+          <TaskBranchLabel task={task} />
+          <TaskSlackOrigin task={task} />
+        </span>
+      </span>
+      <span className="pointer-events-none flex min-h-6 min-w-0 items-center gap-2 pl-5.5">
+        <TaskProjectLabel project={project} />
+        <TaskPinnedMark task={task} />
+        <span className="ml-auto">
+          {canApproveTask(task) ? (
+            <span className="pointer-events-auto relative z-10">
+              <TaskApproveButton task={task} />
+            </span>
+          ) : (
+            <TaskUpdatedAt task={task} />
+          )}
+        </span>
       </span>
       <TaskQuickActions
         task={task}
         actions={actions}
-        className="absolute top-1 right-1 rounded-md bg-card shadow-xs/5"
+        className="absolute top-1.5 right-1.5 rounded-md bg-card shadow-xs/5"
       />
-      <span className="pointer-events-none flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 pl-5.5">
-        <TaskStatusPill task={task} />
-        <TaskSubtaskCount task={task} />
-        <TaskBranchLabel task={task} />
-        <TaskSlackOrigin task={task} />
-      </span>
-      <span className="pointer-events-none flex min-w-0 items-center gap-2 pl-5.5">
-        <TaskProjectLabel project={project} />
-        <TaskPinnedMark task={task} />
-        <span className="ml-auto">
-          <TaskUpdatedAt task={task} />
-        </span>
-      </span>
-      {canApproveTask(task) ? (
-        <span className="relative z-10 flex justify-end">
-          <TaskApproveButton task={task} />
-        </span>
-      ) : null}
     </div>
   );
 }
