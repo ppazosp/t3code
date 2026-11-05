@@ -7,7 +7,7 @@ This fork of T3 Code adds a task view and a router on top of upstream. It is bas
 - Tasks: the home page, at `/tasks`. It shows threads as tasks in a board or a list, with no sidebar. A thread's delegated threads are its subtasks. Columns: Proposed, Todo, In progress, Needs you, In review, Done and Snoozed. Each card carries the thread sidebar's actions: hover buttons to mark done and snooze, and the full thread menu on right-click or the "…" button, with a Status submenu. Dropping a card on Done settles it. Keys: `j` and `k` move, Enter opens, `/` searches, `c` writes to the router.
 - Inside a thread, the left sidebar lists the board's tasks by status, and the details panel on the right starts with the task: its title, its status (which you can change), the task it belongs to, its subtasks, and Approve for a proposal.
 - The router: one thread, tagged `router`, docked at the bottom of the board with T3's own composer and its model and mode controls. Expand the dock to read its conversation. It reads, proposes tasks and follows them. It does not do the work itself.
-- Channels: Slack DMs and mentions from you, and every message in channels you choose, reach the router. It can reply to your messages in Slack.
+- Channels: Slack DMs and mentions from you, and every message in channels you choose, reach the router. Slack is input: what the router proposes from it waits in T3's Proposed column, and the router can only send short replies to your own messages. Approving from Slack and reporting results back to the Slack thread are planned for later.
 
 ## What the router can do
 
