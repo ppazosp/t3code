@@ -6,7 +6,7 @@ This fork of T3 Code adds a task view and a router on top of upstream. It is bas
 
 - Tasks: the home page, at `/tasks`. It shows threads as tasks in a board or a list, with no sidebar. A thread's delegated threads are its subtasks. The board has two columns: Proposed (waiting for your approval) and Needs you (approvals, questions and failures first, then finished work ready for review, with running work in a Working section at its foot). Like Linear, Done and Snoozed are hidden columns, listed at the right of the board with their counts; click one to see its tasks. The list folds the same two sections. Each card carries the thread sidebar's actions: hover buttons to mark done and snooze, and the full thread menu on right-click or the "…" button, with a Status submenu. Dropping a card on Done settles it. Keys: `j` and `k` move, Enter opens, `/` searches, `c` writes to the router.
 - Inside a thread, the left sidebar lists the board's tasks by status, and the details panel on the right starts with the task: its title, its status (which you can change), the task it belongs to, its subtasks, and Approve for a proposal.
-- The router: one thread, tagged `router`, whose composer floats over the bottom of the board, with T3's own model and mode controls and a Router chip on its edge that opens the conversation. Once a message you send there reaches the router, its conversation opens like any other thread's. It reads, proposes tasks and follows them. It does not do the work itself.
+- The router: one thread, tagged `router`, whose composer floats over the bottom of the board, with T3's own model and mode controls and a Router caption above it whose button opens the conversation. The board fades out behind it. Once a message you send there reaches the router, its conversation opens like any other thread's. It reads, proposes tasks and follows them. It does not do the work itself.
 - Channels: Slack DMs and mentions from you, and every message in channels you choose, reach the router. Slack is input: what the router proposes from it waits in T3's Proposed column, and the router can only send short replies to your own messages. Approving from Slack and reporting results back to the Slack thread are planned for later.
 
 ## What the router can do
@@ -37,8 +37,9 @@ Fork code lives in its own files: `apps/web/src/components/tasks/`, `apps/web/sr
 
 These upstream files carry small edits, and are where a merge can conflict:
 
-- `apps/web/src/components/AppSidebarLayout.tsx`: the task sidebar replaces the thread sidebar, and the board has none.
+- `apps/web/src/components/AppSidebarLayout.tsx`: the task sidebar replaces the thread sidebar, and the board has none, but keeps the app's commands.
 - `apps/web/src/components/chat/ThreadDetailsPanel.tsx`: the task section at the top of the details panel.
+- `apps/web/src/lib/sideChatPane.ts`, `apps/web/src/components/ChatView.tsx` and `apps/web/src/components/chat/ChatComposer.tsx`: an embedded chat can set its composer's placeholder, for the router's composer.
 - `apps/web/src/routes/_chat.index.tsx`: the home page opens the board.
 - `apps/web/src/components/sidebar/SidebarChrome.tsx`: the Tasks button.
 - `apps/web/src/components/sidebar/mainAppLocation.ts`: `/tasks` is a utility page.

@@ -1,7 +1,7 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import { useNavigate } from "@tanstack/react-router";
-import { RouteIcon, SquareArrowOutUpRightIcon } from "lucide-react";
+import { Maximize2Icon, RouteIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { observeResize } from "~/lib/observeResize";
@@ -17,6 +17,9 @@ import { resolveTaskStatus } from "./tasks.logic";
 
 /** The row that names the router, on the composer's top edge. */
 const LABEL_HEIGHT = 30;
+
+/** The board fades out over this much space above the router's caption. */
+const FADE_HEIGHT = 24;
 
 /** How long after the user presses send their message may take to reach the router. */
 const SEND_WINDOW_MS = 30_000;
@@ -61,6 +64,7 @@ export function RouterDock({
   const parentPanel: SideChatParentPanel = {
     openToolDiff: openRouter,
     runShellCommand: () => {},
+    composerPlaceholder: "Message the router…",
   };
 
   // The composer sends inside ChatView, so the dock notes the attempt and waits for the router to
@@ -103,42 +107,53 @@ export function RouterDock({
       release?.();
     };
   }, []);
-  const height = composer === null ? null : composer.height + LABEL_HEIGHT;
+  const height = composer === null ? null : composer.height + LABEL_HEIGHT + FADE_HEIGHT;
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- tells the board how much room to leave under its cards
   useEffect(() => onHeightChange(height ?? 0), [height, onHeightChange]);
 
   return (
-    // The composer floats over the board; only it and its label take clicks.
+    // The composer floats over the board, which fades out behind it; only the composer and its
+    // open button take clicks.
     <section
       aria-label="Router"
-      className="pointer-events-none absolute inset-x-0 bottom-0 z-20"
+      className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex flex-col"
       style={{ height: height === null ? "10rem" : `${height}px` }}
     >
+      <div
+        aria-hidden
+        className="shrink-0 bg-linear-to-t from-background to-transparent"
+        style={{ height: FADE_HEIGHT }}
+      />
+      <div aria-hidden className="flex-1 bg-background" />
       {composer === null ? null : (
         <div
-          className="absolute top-0 flex items-end px-2"
-          style={{ left: composer.left, width: composer.width, height: LABEL_HEIGHT }}
+          className="absolute flex items-center gap-1.5 px-4 text-xs text-muted-foreground"
+          style={{
+            top: FADE_HEIGHT,
+            left: composer.left,
+            width: composer.width,
+            height: LABEL_HEIGHT,
+          }}
         >
-          <span className="pointer-events-auto flex h-6 items-center gap-1.5 rounded-full border border-border/70 bg-card pr-0.5 pl-2.5 text-xs shadow-xs/5">
-            <RouteIcon aria-hidden className="size-3.5 text-muted-foreground" />
-            <span className="font-medium">Router</span>
-            <TaskStatusPill task={task} />
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    size="icon-xs"
-                    variant="ghost-muted"
-                    aria-label="Open the router's conversation"
-                    onClick={openRouter}
-                  />
-                }
-              >
-                <SquareArrowOutUpRightIcon />
-              </TooltipTrigger>
-              <TooltipPopup side="top">Open conversation</TooltipPopup>
-            </Tooltip>
-          </span>
+          <RouteIcon aria-hidden className="size-3.5" />
+          <span>Router</span>
+          <TaskStatusPill task={task} />
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  size="icon-xs"
+                  variant="ghost-muted"
+                  className="pointer-events-auto ml-auto"
+                  aria-label="Open the router's conversation"
+                  onClick={openRouter}
+                />
+              }
+            >
+              <Maximize2Icon />
+            </TooltipTrigger>
+            <TooltipPopup side="top">Open conversation</TooltipPopup>
+          </Tooltip>
         </div>
       )}
       <div
