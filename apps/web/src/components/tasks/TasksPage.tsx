@@ -33,7 +33,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { WorkspaceBreadcrumb, WorkspaceBreadcrumbItem } from "../WorkspaceBreadcrumb";
 import { WorkspacePageContainer } from "../WorkspacePageContainer";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
-import { RouterPanel } from "./RouterPanel";
+import { RouterDock } from "./RouterDock";
 import { RouterSetup } from "./RouterSetup";
 import { TaskBoard } from "./TaskBoard";
 import { TaskList } from "./TaskList";
@@ -90,7 +90,6 @@ export function TasksPage() {
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
   const composerRef = useRef<ChatComposerHandle | null>(null);
-  const [routerOpen, setRouterOpen] = useState(false);
   const [unfolded, setUnfolded] = useState<ReadonlySet<TaskStatus>>(new Set());
   useTaskFamilies(threads);
 
@@ -190,11 +189,8 @@ export function TasksPage() {
           searchRef.current?.focus();
           return;
         case "c":
-          if (router === null) return;
           event.preventDefault();
-          setRouterOpen(true);
-          // The panel shows on the next frame; its composer can take focus after that.
-          requestAnimationFrame(() => composerRef.current?.focusAtEnd());
+          composerRef.current?.focusAtEnd();
           return;
         default:
           return;
@@ -330,13 +326,7 @@ export function TasksPage() {
           </div>
         )}
         {router === null ? null : (
-          <RouterPanel
-            router={router}
-            now={now}
-            composerRef={composerRef}
-            open={routerOpen}
-            onOpenChange={setRouterOpen}
-          />
+          <RouterDock router={router} now={now} composerRef={composerRef} />
         )}
       </div>
     </SidebarInset>
