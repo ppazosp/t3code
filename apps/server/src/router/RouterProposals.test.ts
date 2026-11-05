@@ -1,6 +1,13 @@
 import { assert, describe, it } from "@effect/vitest";
 
-import { isProposalThread, PROPOSAL_DENIED_TOOLS, slackOriginOf } from "./RouterProposals.ts";
+import { ThreadId } from "@t3tools/contracts";
+
+import {
+  beginRouterLaunch,
+  isProposalThread,
+  PROPOSAL_TOOLS,
+  slackOriginOf,
+} from "./RouterProposals.ts";
 
 describe("RouterProposals", () => {
   it("reads the Slack ref only from the header line the channel adapter writes", () => {
@@ -14,13 +21,16 @@ describe("RouterProposals", () => {
     assert.isNull(slackOriginOf("[slack dm from you ref=slack:D1:<!channel>]"));
   });
 
-  it("marks proposals by tag, and keeps delegation and messaging behind approval", () => {
-    assert.isTrue(isProposalThread({ tags: ["proposal"] }));
-    assert.isFalse(isProposalThread({ tags: ["router"] }));
-    assert.isFalse(isProposalThread({}));
+  it("marks proposals by tag, and lets them only read until they are approved", () => {
+    const id = ThreadId.make("thread:launching");
+    assert.isTrue(isProposalThread({ id, tags: ["proposal"] }));
+    assert.isFalse(isProposalThread({ id, tags: ["router"] }));
+    // A router launch counts before its tag is stored.
+    beginRouterLaunch(id);
+    assert.isTrue(isProposalThread({ id }));
     for (const tool of ["delegate_task", "create_threads", "t3_thread_launch", "t3_thread_send"]) {
-      assert.isTrue(PROPOSAL_DENIED_TOOLS.has(tool));
+      assert.isFalse(PROPOSAL_TOOLS.has(tool));
     }
-    assert.isFalse(PROPOSAL_DENIED_TOOLS.has("t3_thread_read"));
+    assert.isTrue(PROPOSAL_TOOLS.has("t3_thread_read"));
   });
 });

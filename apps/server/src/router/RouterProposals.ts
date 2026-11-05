@@ -9,23 +9,33 @@ import * as Effect from "effect/Effect";
 
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
 
-/** Tools that start, message or hand work to another thread. A proposal waits for approval first. */
-export const PROPOSAL_DENIED_TOOLS: ReadonlySet<string> = new Set([
-  "delegate_task",
-  "create_threads",
-  "t3_thread_launch",
-  "t3_thread_send",
-  "t3_thread_send_attachments",
-  "t3_thread_transfer",
-  "t3_thread_organize",
-  "t3_queue",
-  "t3_pending_request",
-  "schedule_task",
-  "run_scheduled_task_now",
+/**
+ * The T3 tools a proposal may call before the user approves it: reading and listing. Anything else,
+ * such as delegating, messaging another thread or changing settings, waits for approval.
+ */
+export const PROPOSAL_TOOLS: ReadonlySet<string> = new Set([
+  "orchestrator_capabilities",
+  "t3_project_list",
+  "t3_project_read",
+  "t3_thread_list",
+  "t3_thread_read",
+  "t3_thread_search",
+  "list_scheduled_tasks",
 ]);
 
-export function isProposalThread(thread: Pick<OrchestrationV2ThreadShell, "tags">): boolean {
-  return thread.tags?.includes(PROPOSAL_TAG) === true;
+/**
+ * Threads the router is launching whose tag is not stored yet. A launch starts the first turn before
+ * a tag can be set, so the id counts as a proposal from the moment it is chosen. A failed tag keeps
+ * the id here, so the thread stays limited until the server restarts.
+ */
+const launching = new Set<string>();
+
+export function beginRouterLaunch(threadId: ThreadId): void {
+  launching.add(threadId);
+}
+
+export function isProposalThread(thread: Pick<OrchestrationV2ThreadShell, "id" | "tags">): boolean {
+  return thread.tags?.includes(PROPOSAL_TAG) === true || launching.has(thread.id);
 }
 
 const SLACK_HEADER = /^\[slack [^\]\n]* ref=(slack:[A-Z0-9]+:\d+\.\d+)\]$/u;
@@ -62,4 +72,5 @@ export const markRouterLaunch = Effect.fn("RouterProposals.markRouterLaunch")(fu
       tagged: true,
     });
   }
+  launching.delete(input.threadId);
 });

@@ -225,6 +225,10 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
             )?.supportedRuntimeModes,
           });
         }
+        // What the router launches is a proposal from its first turn: the id counts as one before
+        // the thread exists, until its tag is stored.
+        const routerLaunch = caller !== undefined && isRouterThread(caller);
+        if (routerLaunch) RouterProposals.beginRouterLaunch(threadId);
         const result = yield* ThreadMessageIntake.launchThread({
           commandId,
           threadId,
@@ -274,8 +278,7 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
           }),
         );
         const thread = result.projection.thread;
-        // What the router starts is a proposal until the user approves it.
-        if (caller !== undefined && isRouterThread(caller)) {
+        if (routerLaunch && caller !== undefined) {
           yield* RouterProposals.markRouterLaunch({
             routerId: caller.id,
             threadId: thread.id,

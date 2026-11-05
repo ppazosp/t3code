@@ -135,6 +135,8 @@ const ProbeToolkit = Toolkit.make(
   Tool.make("writes_environment", probe),
   // Named like a real tool that messages another thread, which a proposal may not call.
   Tool.make("t3_thread_send", probe),
+  // Named like a real read tool, which a proposal may call.
+  Tool.make("t3_thread_read", probe),
 );
 const ran = Effect.succeed({ ran: "ran" });
 const probeHandlers: McpToolAccess.Handlers<typeof ProbeToolkit.tools> = {
@@ -154,6 +156,7 @@ const probeHandlers: McpToolAccess.Handlers<typeof ProbeToolkit.tools> = {
   ),
   writes_environment: McpToolAccess.writesEnvironment(() => ran),
   t3_thread_send: McpToolAccess.actsAsCaller(() => ran),
+  t3_thread_read: McpToolAccess.reads(() => ran),
 };
 const layerProbeHandlers = McpToolAccess.toLayer(ProbeToolkit, probeHandlers);
 
@@ -194,6 +197,7 @@ export const refusedAtCompileTime = () => {
       starts_threads: unchecked,
       writes_environment: unchecked,
       t3_thread_send: unchecked,
+      t3_thread_read: unchecked,
     }),
   );
 };
@@ -260,9 +264,10 @@ it.effect.each([
   // The router gets only its own tools, which these probes are not.
   ["reads", router, {}, "capability_denied"],
   ["starts_threads", router, {}, "capability_denied"],
-  // A proposal reads and plans, but hands no work to other threads until it is approved.
+  // A proposal only reads until it is approved: its read tools run, and nothing else does.
   ["t3_thread_send", proposal, {}, "capability_denied"],
-  ["reads", proposal, {}, "ran"],
+  ["reads", proposal, {}, "capability_denied"],
+  ["t3_thread_read", proposal, {}, "ran"],
   ["t3_thread_send", supervised, {}, "ran"],
 
   ["writes", readOnlyClient, {}, "capability_denied"],
