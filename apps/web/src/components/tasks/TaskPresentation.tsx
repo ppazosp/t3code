@@ -5,17 +5,27 @@ import {
   CircleCheckIcon,
   CircleDashedIcon,
   CircleDotIcon,
+  ClockIcon,
+  EllipsisIcon,
   EyeIcon,
+  GitBranchIcon,
   LightbulbIcon,
   type LucideIcon,
+  PinIcon,
+  RotateCcwIcon,
 } from "lucide-react";
+import type { MouseEvent, ReactNode } from "react";
 
 import { cn } from "~/lib/utils";
+import { MiddleTruncate } from "../ui/middle-truncate";
 import { ProjectFavicon } from "../ProjectFavicon";
+import { Button } from "../ui/button";
+import { Input } from "../ui/input";
 import { RelativeTime } from "../RelativeTime";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { resolveThreadStatusPill } from "../Sidebar.logic";
 import { subtaskProgress, TASK_COLUMN_LABELS, type TaskColumn, type TaskNode } from "./tasks.logic";
+import type { TaskActions } from "./useTaskActions";
 
 const COLUMN_GLYPHS: Record<TaskColumn, { Icon: LucideIcon; className: string }> = {
   proposed: { Icon: LightbulbIcon, className: "text-primary" },
@@ -103,6 +113,134 @@ export function TaskUpdatedAt({ task }: { task: TaskNode }) {
   return (
     <span className="shrink-0 text-2xs whitespace-nowrap text-muted-foreground tabular-nums">
       <RelativeTime timestamp={task.thread.updatedAt} />
+    </span>
+  );
+}
+
+export function TaskBranchLabel({ task }: { task: TaskNode }) {
+  const branch = task.thread.branch;
+  if (!branch) return null;
+  return (
+    <span className="inline-flex min-w-0 items-center gap-1 text-2xs text-muted-foreground">
+      <GitBranchIcon aria-hidden className="size-3 shrink-0" />
+      <MiddleTruncate value={branch} className="flex min-w-0" />
+    </span>
+  );
+}
+
+export function TaskPinnedMark({ task }: { task: TaskNode }) {
+  if (task.thread.pinnedAt == null) return null;
+  return <PinIcon aria-label="Pinned" className="size-3 shrink-0 text-muted-foreground" />;
+}
+
+/** The task's title, or a field to rename it in place. */
+export function TaskTitle({
+  task,
+  actions,
+  className,
+}: {
+  task: TaskNode;
+  actions: TaskActions;
+  className?: string;
+}) {
+  if (actions.rename.renamingKey !== task.key) {
+    return <span className={className}>{task.thread.title}</span>;
+  }
+  return (
+    <Input
+      autoFocus
+      size="sm"
+      aria-label="Task title"
+      defaultValue={task.thread.title}
+      className="pointer-events-auto relative z-10 min-w-0 flex-1"
+      onClick={(event) => event.stopPropagation()}
+      onBlur={(event) => void actions.rename.commit(task, event.currentTarget.value)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") void actions.rename.commit(task, event.currentTarget.value);
+        if (event.key === "Escape") actions.rename.cancel();
+      }}
+    />
+  );
+}
+
+const anchorOf = (event: MouseEvent<HTMLElement>) => {
+  const rect = event.currentTarget.getBoundingClientRect();
+  return { x: rect.left, y: rect.bottom };
+};
+
+function QuickAction({
+  label,
+  onClick,
+  children,
+}: {
+  label: string;
+  onClick: (event: MouseEvent<HTMLButtonElement>) => void;
+  children: ReactNode;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            size="icon-xs"
+            variant="ghost-muted"
+            aria-label={label}
+            onClick={(event) => {
+              event.stopPropagation();
+              onClick(event);
+            }}
+          />
+        }
+      >
+        {children}
+      </TooltipTrigger>
+      <TooltipPopup side="top">{label}</TooltipPopup>
+    </Tooltip>
+  );
+}
+
+/**
+ * The sidebar's row actions, on a task: mark done or reopen, snooze, and every other action in
+ * the menu. They show on hover or focus, and the menu also opens on right-click.
+ */
+export function TaskQuickActions({
+  task,
+  actions,
+  className,
+}: {
+  task: TaskNode;
+  actions: TaskActions;
+  className?: string;
+}) {
+  if (!actions.canOperate(task)) return null;
+  const done = task.column === "done";
+  return (
+    <span
+      className={cn(
+        "pointer-events-none z-10 flex shrink-0 items-center opacity-0 transition-opacity group-hover/task:pointer-events-auto group-hover/task:opacity-100 group-focus-within/task:pointer-events-auto group-focus-within/task:opacity-100",
+        className,
+      )}
+    >
+      <QuickAction
+        label={done ? "Reopen" : "Mark done"}
+        onClick={() => void (done ? actions.unsettle(task) : actions.moveTask(task, "done"))}
+      >
+        {done ? <RotateCcwIcon /> : <CircleCheckIcon />}
+      </QuickAction>
+      {done ? null : (
+        <QuickAction
+          label={task.column === "snoozed" ? "Wake" : "Snooze"}
+          onClick={(event) => void actions.openSnoozeMenu(task, anchorOf(event))}
+        >
+          <ClockIcon />
+        </QuickAction>
+      )}
+      <QuickAction
+        label="More actions"
+        onClick={(event) => void actions.openMenu(task, anchorOf(event))}
+      >
+        <EllipsisIcon />
+      </QuickAction>
     </span>
   );
 }

@@ -179,3 +179,22 @@ export function matchesTaskQuery(task: TaskNode, query: string): boolean {
     task.subtasks.some((subtask) => matchesTaskQuery(subtask, folded))
   );
 }
+
+/** The task with `key`, wherever it sits in the tree, and the task it belongs to. */
+export function findTask(
+  tasks: ReadonlyArray<TaskNode>,
+  key: string,
+): { readonly task: TaskNode; readonly parent: TaskNode | null } | null {
+  const visit = (
+    nodes: ReadonlyArray<TaskNode>,
+    parent: TaskNode | null,
+  ): { readonly task: TaskNode; readonly parent: TaskNode | null } | null => {
+    for (const node of nodes) {
+      if (node.key === key) return { task: node, parent };
+      const found = visit(node.subtasks, node);
+      if (found !== null) return found;
+    }
+    return null;
+  };
+  return visit(tasks, null);
+}

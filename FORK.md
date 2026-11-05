@@ -4,8 +4,9 @@ This fork of T3 Code adds a task view and a router on top of upstream. It is bas
 
 ## What it adds
 
-- Tasks: a page at `/tasks`, opened from the sidebar, that shows threads as tasks in a board or a list. A thread's delegated threads are its subtasks. Columns: Proposed, Todo, In progress, Needs you, In review, Done and Snoozed. Dropping a card on Done settles it.
-- The router: one thread, tagged `router`, that you talk to from the top of the Tasks page. It reads, proposes tasks and follows them. It does not do the work itself.
+- Tasks: the home page, at `/tasks`. It shows threads as tasks in a board or a list, with no sidebar. A thread's delegated threads are its subtasks. Columns: Proposed, Todo, In progress, Needs you, In review, Done and Snoozed. Each card carries the thread sidebar's actions: hover buttons to mark done and snooze, and the full thread menu on right-click or the "…" button, with a Status submenu. Dropping a card on Done settles it. Keys: `j` and `k` move, Enter opens, `/` searches, `c` writes to the router.
+- Inside a thread, the left sidebar lists the board's tasks by status, and the details panel on the right starts with the task: its title, its status (which you can change), the task it belongs to, its subtasks, and Approve for a proposal.
+- The router: one thread, tagged `router`, docked at the bottom of the board with T3's own composer and its model and mode controls. Expand the dock to read its conversation. It reads, proposes tasks and follows them. It does not do the work itself.
 - Channels: Slack DMs and mentions from you, and every message in channels you choose, reach the router. It can reply to your messages in Slack.
 
 ## What the router can do
@@ -36,6 +37,9 @@ Fork code lives in its own files: `apps/web/src/components/tasks/`, `apps/web/sr
 
 These upstream files carry small edits, and are where a merge can conflict:
 
+- `apps/web/src/components/AppSidebarLayout.tsx`: the task sidebar replaces the thread sidebar, and the board has none.
+- `apps/web/src/components/chat/ThreadDetailsPanel.tsx`: the task section at the top of the details panel.
+- `apps/web/src/routes/_chat.index.tsx`: the home page opens the board.
 - `apps/web/src/components/sidebar/SidebarChrome.tsx`: the Tasks button.
 - `apps/web/src/components/sidebar/mainAppLocation.ts`: `/tasks` is a utility page.
 - `apps/web/src/routeTree.gen.ts`: generated; regenerate it rather than merging it.

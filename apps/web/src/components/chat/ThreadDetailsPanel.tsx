@@ -39,6 +39,7 @@ import {
   THREAD_DETAILS_PANEL_LABEL_CLASS,
 } from "./threadDetailsPanelStyles";
 import { Menu, MenuPopup } from "../ui/menu";
+import { TaskDetailsSection } from "../tasks/TaskDetailsSection";
 
 const GitActionsControl = memo(BaseGitActionsControl);
 
@@ -162,6 +163,9 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
         return (
           <>
             <div className="group/details-items">
+              {props.isServerThread && !props.draftId ? (
+                <TaskDetailsSection environmentId={props.environmentId} threadId={props.threadId} />
+              ) : null}
               {show.environment || show.openIn || show.scripts ? (
                 <ThreadDetailsSection
                   headingId="thread-details-workspace-heading"

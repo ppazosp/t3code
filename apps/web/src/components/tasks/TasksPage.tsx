@@ -1,24 +1,39 @@
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/models";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { ChevronDownIcon, KanbanIcon, ListIcon, SearchIcon } from "lucide-react";
+import {
+  ChartNoAxesColumnIcon,
+  ChevronDownIcon,
+  KanbanIcon,
+  ListIcon,
+  PlusIcon,
+  SearchIcon,
+  SettingsIcon,
+} from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { isElectron } from "~/env";
+import type { ChatComposerHandle } from "../chat/ChatComposer";
+import { useNewThreadHandler } from "../../hooks/useHandleNewThread";
 import { useNowMinute } from "../../hooks/useNowMinute";
 import { useProjects, useThreadShells } from "../../state/entities";
-import { threadEnvironment } from "../../state/threads";
-import { useOrchestrationCommand } from "../../state/use-orchestration-command";
+import { usePullRequestsSupported } from "../../state/environments";
 import { buildThreadRouteParams } from "../../threadRoutes";
 import { ProjectFavicon } from "../ProjectFavicon";
+import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
+import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPreferences";
 import { Button } from "../ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "../ui/input-group";
-import { Menu, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "../ui/menu";
+import { Kbd } from "../ui/kbd";
+import { Menu, MenuItem, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "../ui/menu";
 import { SidebarInset } from "../ui/sidebar";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { WorkspaceBreadcrumb, WorkspaceBreadcrumbItem } from "../WorkspaceBreadcrumb";
 import { WorkspacePageContainer } from "../WorkspacePageContainer";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
-import { RouterBar } from "./RouterBar";
+import { RouterDock } from "./RouterDock";
+import { RouterSetup } from "./RouterSetup";
 import { TaskBoard } from "./TaskBoard";
 import { TaskList } from "./TaskList";
 import {
@@ -27,9 +42,10 @@ import {
   isRouterThread,
   matchesTaskQuery,
   TASK_COLUMNS,
-  type TaskColumn,
   type TaskNode,
 } from "./tasks.logic";
+import { useTaskActions } from "./useTaskActions";
+import { useTaskFamilies } from "./useTaskFamilies";
 
 export interface TasksSearch {
   readonly view?: "board" | "list" | undefined;
@@ -42,6 +58,18 @@ const ALL_PROJECTS = "";
 const projectKeyOf = (project: Pick<EnvironmentProject, "environmentId" | "id">) =>
   `${project.environmentId}:${project.id}`;
 
+/** Keys typed into a field, or with a modifier, belong to that field or to the app. */
+function isTypingTarget(event: KeyboardEvent): boolean {
+  const target = event.target;
+  return (
+    event.metaKey ||
+    event.ctrlKey ||
+    event.altKey ||
+    (target instanceof HTMLElement &&
+      (target.isContentEditable || target.closest("input, textarea, select, [role=menu]") !== null))
+  );
+}
+
 export function TasksPage() {
   const search = useSearch({ from: "/_chat/tasks" });
   const navigate = useNavigate({ from: "/tasks" });
@@ -51,9 +79,12 @@ export function TasksPage() {
   const nowMinute = useNowMinute();
   const threads = useThreadShells();
   const projects = useProjects().filter((project) => project.archivedAt == null);
-  const settle = useOrchestrationCommand(threadEnvironment.settle);
-  const unsettle = useOrchestrationCommand(threadEnvironment.unsettle);
-  const setInteractionMode = useOrchestrationCommand(threadEnvironment.setInteractionMode);
+  const actions = useTaskActions();
+  const handleNewThread = useNewThreadHandler();
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const searchRef = useRef<HTMLInputElement | null>(null);
+  const composerRef = useRef<ChatComposerHandle | null>(null);
+  useTaskFamilies(threads);
 
   const updateSearch = (next: Partial<TasksSearch>) =>
     void navigate({ search: (previous) => ({ ...previous, ...next }), replace: true });
@@ -76,6 +107,14 @@ export function TasksPage() {
   const columns = TASK_COLUMNS.map((column) => ({ column, tasks: grouped.get(column) ?? [] }))
     // Snoozed work stays out of the way until something is snoozed.
     .filter(({ column, tasks: inColumn }) => column !== "snoozed" || inColumn.length > 0);
+  // Keyboard order follows what is on screen: down each column on the board, down the list.
+  const ordered = columns.flatMap(({ tasks: inColumn }) =>
+    view === "list"
+      ? inColumn.flatMap(function walk(task): TaskNode[] {
+          return [task, ...task.subtasks.flatMap(walk)];
+        })
+      : inColumn,
+  );
 
   const openTask = (task: TaskNode) =>
     void navigate({
@@ -83,25 +122,57 @@ export function TasksPage() {
       params: buildThreadRouteParams(scopeThreadRef(task.thread.environmentId, task.thread.id)),
     });
 
-  // A card dropped on the board changes what the column stands for, where that is the user's call.
-  const moveTask = (task: TaskNode, column: TaskColumn) => {
-    const target = {
-      environmentId: task.thread.environmentId,
-      input: { threadId: task.thread.id },
-    };
-    if (column === "done") {
-      void settle(target);
-      return;
-    }
-    if (task.column === "done") {
-      void unsettle({ ...target, input: { ...target.input, reason: "user" } });
-    }
-    if (column === "proposed" && task.thread.interactionMode !== "plan") {
-      void setInteractionMode({ ...target, input: { ...target.input, interactionMode: "plan" } });
-    }
-  };
-
   const selectedProject = projectByKey.get(projectFilter);
+  const newTaskProjects = selectedProject ? [selectedProject] : projects;
+  const startNewTask = (project: EnvironmentProject) =>
+    void handleNewThread(scopeProjectRef(project.environmentId, project.id));
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to window keydown for the board's keyboard shortcuts with the tasks on screen
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || isTypingTarget(event)) return;
+      const index = ordered.findIndex((task) => task.key === selectedKey);
+      const select = (task: TaskNode | undefined) => {
+        if (task === undefined) return;
+        event.preventDefault();
+        setSelectedKey(task.key);
+        document
+          .querySelector(`[data-task-key="${CSS.escape(task.key)}"]`)
+          ?.scrollIntoView({ block: "nearest" });
+      };
+      switch (event.key) {
+        case "j":
+        case "ArrowDown":
+          select(ordered[index + 1] ?? ordered[0]);
+          return;
+        case "k":
+        case "ArrowUp":
+          select(ordered[index - 1] ?? ordered.at(-1));
+          return;
+        case "Enter":
+          if (index >= 0) {
+            event.preventDefault();
+            openTask(ordered[index]!);
+          }
+          return;
+        case "Escape":
+          setSelectedKey(null);
+          return;
+        case "/":
+          event.preventDefault();
+          searchRef.current?.focus();
+          return;
+        case "c":
+          event.preventDefault();
+          composerRef.current?.focusAtEnd();
+          return;
+        default:
+          return;
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  });
 
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none">
@@ -112,21 +183,29 @@ export function TasksPage() {
               <h1 className="truncate">Tasks</h1>
             </WorkspaceBreadcrumbItem>
           </WorkspaceBreadcrumb>
+          <AppLinks />
         </WorkspacePageHeader>
         <WorkspacePageContainer width="expanded" className="max-w-none shrink-0 gap-3 pb-3">
-          <RouterBar router={router} projects={projects} now={now} />
+          {router === null ? <RouterSetup projects={projects} /> : null}
           <div className="flex flex-wrap items-center gap-2">
             <InputGroup className="min-w-0 flex-1 basis-56 **:[input]:h-9 sm:**:[input]:h-8">
               <InputGroupAddon>
                 <SearchIcon aria-hidden />
               </InputGroupAddon>
               <InputGroupInput
+                ref={searchRef}
                 type="search"
                 aria-label="Search tasks"
                 placeholder="Search tasks"
                 value={query}
                 onChange={(event) => updateSearch({ q: event.currentTarget.value || undefined })}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") event.currentTarget.blur();
+                }}
               />
+              <InputGroupAddon align="inline-end">
+                <Kbd>/</Kbd>
+              </InputGroupAddon>
             </InputGroup>
             <Menu>
               <MenuTrigger render={<Button variant="outline" />} className="min-w-0">
@@ -170,14 +249,32 @@ export function TasksPage() {
                 List
               </Toggle>
             </ToggleGroup>
+            <Menu>
+              <MenuTrigger
+                render={<Button variant="outline" />}
+                disabled={newTaskProjects.length === 0}
+              >
+                <PlusIcon aria-hidden />
+                New task
+              </MenuTrigger>
+              <MenuPopup align="end" side="bottom">
+                {newTaskProjects.map((project) => (
+                  <MenuItem key={projectKeyOf(project)} onClick={() => startNewTask(project)}>
+                    <ProjectFavicon project={project} className="size-3.5" />
+                    {project.title}
+                  </MenuItem>
+                ))}
+              </MenuPopup>
+            </Menu>
           </div>
         </WorkspacePageContainer>
         {view === "board" ? (
           <TaskBoard
             columns={columns}
             projectOf={projectOf}
+            actions={actions}
+            selectedKey={selectedKey}
             onOpen={openTask}
-            onDropInColumn={moveTask}
           />
         ) : (
           <div className="topbar-scroll-fade scrollbar-gutter-both min-h-0 flex-1 overflow-y-auto">
@@ -185,12 +282,70 @@ export function TasksPage() {
               {tasks.length === 0 ? (
                 <p className="px-3 text-sm text-muted-foreground">No tasks yet.</p>
               ) : (
-                <TaskList columns={columns} projectOf={projectOf} onOpen={openTask} />
+                <TaskList
+                  columns={columns}
+                  projectOf={projectOf}
+                  actions={actions}
+                  selectedKey={selectedKey}
+                  onOpen={openTask}
+                />
               )}
             </WorkspacePageContainer>
           </div>
         )}
+        {router === null ? null : (
+          <RouterDock router={router} now={now} composerRef={composerRef} />
+        )}
       </div>
     </SidebarInset>
+  );
+}
+
+function AppLink({
+  label,
+  onClick,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button size="icon-sm" variant="ghost-muted" aria-label={label} onClick={onClick} />
+        }
+      >
+        {children}
+      </TooltipTrigger>
+      <TooltipPopup side="bottom">{label}</TooltipPopup>
+    </Tooltip>
+  );
+}
+
+/** What the sidebar's footer offered, now that the board has no sidebar. */
+function AppLinks() {
+  const navigate = useNavigate();
+  const pullRequestsSupported = usePullRequestsSupported();
+  return (
+    <div className="ml-auto flex items-center gap-0.5">
+      {pullRequestsSupported ? (
+        <AppLink
+          label="Pull requests"
+          onClick={() =>
+            void navigate({ to: "/pull-requests", search: readPullRequestListPreferences() })
+          }
+        >
+          <PullRequestGlyph.pullRequest />
+        </AppLink>
+      ) : null}
+      <AppLink label="Usage" onClick={() => void navigate({ to: "/usage" })}>
+        <ChartNoAxesColumnIcon />
+      </AppLink>
+      <AppLink label="Settings" onClick={() => void navigate({ to: "/settings" })}>
+        <SettingsIcon />
+      </AppLink>
+    </div>
   );
 }

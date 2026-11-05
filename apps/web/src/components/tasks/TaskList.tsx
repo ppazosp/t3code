@@ -6,21 +6,30 @@ import { cn } from "~/lib/utils";
 import { canApproveTask, TaskApproveButton } from "./TaskApproveButton";
 import { Separator } from "../ui/separator";
 import {
+  TaskBranchLabel,
   TaskColumnGlyph,
+  TaskPinnedMark,
   TaskProjectLabel,
+  TaskQuickActions,
   TaskStatusPill,
   TaskSubtaskCount,
+  TaskTitle,
   TaskUpdatedAt,
 } from "./TaskPresentation";
 import { TASK_COLUMN_LABELS, type TaskColumn, type TaskNode } from "./tasks.logic";
+import type { TaskActions } from "./useTaskActions";
 
 export function TaskList({
   columns,
   projectOf,
+  actions,
+  selectedKey,
   onOpen,
 }: {
   columns: ReadonlyArray<{ column: TaskColumn; tasks: ReadonlyArray<TaskNode> }>;
   projectOf: (task: TaskNode) => EnvironmentProject | undefined;
+  actions: TaskActions;
+  selectedKey: string | null;
   onOpen: (task: TaskNode) => void;
 }) {
   return (
@@ -36,7 +45,15 @@ export function TaskList({
               <Separator className="min-w-2 flex-1" />
             </header>
             {tasks.map((task) => (
-              <TaskRow key={task.key} task={task} depth={0} projectOf={projectOf} onOpen={onOpen} />
+              <TaskRow
+                key={task.key}
+                task={task}
+                depth={0}
+                projectOf={projectOf}
+                actions={actions}
+                selectedKey={selectedKey}
+                onOpen={onOpen}
+              />
             ))}
           </section>
         ))}
@@ -48,11 +65,15 @@ function TaskRow({
   task,
   depth,
   projectOf,
+  actions,
+  selectedKey,
   onOpen,
 }: {
   task: TaskNode;
   depth: number;
   projectOf: (task: TaskNode) => EnvironmentProject | undefined;
+  actions: TaskActions;
+  selectedKey: string | null;
   onOpen: (task: TaskNode) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
@@ -60,8 +81,14 @@ function TaskRow({
   return (
     <>
       <div
+        data-task-key={task.key}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          void actions.openMenu(task, { x: event.clientX, y: event.clientY });
+        }}
         className={cn(
-          "group/task-row flex w-full items-center gap-2 rounded-md py-1.5 pr-3 hover:bg-accent/50",
+          "group/task flex w-full items-center gap-2 rounded-md py-1 pr-2 hover:bg-accent/50",
+          task.key === selectedKey && "bg-accent/60",
           task.column === "done" && depth === 0 && "opacity-70",
         )}
         style={{ paddingLeft: `${0.75 + depth * 1.25}rem` }}
@@ -81,18 +108,23 @@ function TaskRow({
         <button
           type="button"
           onClick={() => onOpen(task)}
-          className="flex min-w-0 flex-1 items-center gap-2 text-left outline-hidden"
+          className="flex min-w-0 flex-1 items-center gap-2 py-0.5 text-left outline-hidden"
         >
           <TaskColumnGlyph column={task.column} />
-          <span className="min-w-0 truncate text-sm">{task.thread.title}</span>
+          <TaskTitle task={task} actions={actions} className="min-w-0 truncate text-sm" />
           <TaskSubtaskCount task={task} />
+          <TaskPinnedMark task={task} />
           <span className="ml-auto flex shrink-0 items-center gap-3">
             <TaskStatusPill task={task} />
+            <span className="hidden max-w-48 md:flex">
+              <TaskBranchLabel task={task} />
+            </span>
             {depth === 0 ? <TaskProjectLabel project={projectOf(task)} /> : null}
             <TaskUpdatedAt task={task} />
           </span>
         </button>
         {canApproveTask(task) ? <TaskApproveButton task={task} /> : null}
+        <TaskQuickActions task={task} actions={actions} />
       </div>
       {expanded
         ? task.subtasks.map((subtask) => (
@@ -101,6 +133,8 @@ function TaskRow({
               task={subtask}
               depth={depth + 1}
               projectOf={projectOf}
+              actions={actions}
+              selectedKey={selectedKey}
               onOpen={onOpen}
             />
           ))

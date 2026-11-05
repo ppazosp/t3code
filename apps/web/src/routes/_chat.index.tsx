@@ -1,7 +1,7 @@
 import { workspaceAreaProps } from "../lib/workspaceFocus";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
-import { createFileRoute, useRouter } from "@tanstack/react-router";
+import { createFileRoute, redirect, useRouter } from "@tanstack/react-router";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { isElectron } from "../env";
@@ -118,5 +118,11 @@ function DraftStartError({ onRetry }: { readonly onRetry: () => void }) {
 }
 
 export const Route = createFileRoute("/_chat/")({
+  // The task board is home. A hosted page with no environment still shows its empty state.
+  beforeLoad: ({ context }) => {
+    if (context.authGateState.status !== "hosted-static") {
+      throw redirect({ to: "/tasks", replace: true });
+    }
+  },
   component: ChatIndexRouteView,
 });

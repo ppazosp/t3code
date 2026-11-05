@@ -1,9 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import type {
-  EnvironmentProject,
-  EnvironmentThreadShell,
-} from "@t3tools/client-runtime/state/models";
+import type { EnvironmentProject } from "@t3tools/client-runtime/state/models";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import {
   type ModelSelection,
@@ -11,43 +7,22 @@ import {
   ROUTER_TAG,
   type ThreadTag,
 } from "@t3tools/contracts";
-import { useNavigate } from "@tanstack/react-router";
-import { ArrowUpIcon, ChevronDownIcon, RouteIcon } from "lucide-react";
+import { ChevronDownIcon, RouteIcon } from "lucide-react";
 import { useState } from "react";
 
 import { newMessageId, newThreadId } from "~/lib/utils";
 import { primaryServerProvidersAtom } from "../../state/server";
 import { threadEnvironment } from "../../state/threads";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
-import { buildThreadRouteParams } from "../../threadRoutes";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { Button } from "../ui/button";
 import { Menu, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "../ui/menu";
-import { Textarea } from "../ui/textarea";
 import { toastManager } from "../ui/toast";
-import { TaskStatusPill } from "./TaskPresentation";
-import { resolveTaskColumn } from "./tasks.logic";
 
 const ROUTER_TITLE = "Router";
 // The server caps what the router starts, whatever its own mode. Its own mode stays narrow too,
 // so a provider without a read-only sandbox still asks before the router edits anything.
 const ROUTER_RUNTIME_MODE = "approval-required";
-
-export function RouterBar({
-  router,
-  projects,
-  now,
-}: {
-  router: EnvironmentThreadShell | null;
-  projects: ReadonlyArray<EnvironmentProject>;
-  now: string;
-}) {
-  return router === null ? (
-    <RouterSetup projects={projects} />
-  ) : (
-    <RouterComposer router={router} now={now} />
-  );
-}
 
 const nowIso = () => new Date().toISOString();
 
@@ -59,88 +34,13 @@ function RouterFrame({ children }: { children: React.ReactNode }) {
   );
 }
 
-function RouterComposer({ router, now }: { router: EnvironmentThreadShell; now: string }) {
-  const navigate = useNavigate();
-  const startTurn = useOrchestrationCommand(threadEnvironment.startTurn);
-  const [text, setText] = useState("");
-  const [sending, setSending] = useState(false);
-  const task = {
-    key: router.id,
-    thread: router,
-    column: resolveTaskColumn(router, now),
-    subtasks: [],
-  };
-
-  const openRouter = () =>
-    navigate({
-      to: "/$environmentId/$threadId",
-      params: buildThreadRouteParams(scopeThreadRef(router.environmentId, router.id)),
-    });
-
-  const send = async () => {
-    const message = text.trim();
-    if (message === "" || sending) return;
-    setSending(true);
-    const result = await startTurn({
-      environmentId: router.environmentId,
-      input: {
-        threadId: router.id,
-        message: { messageId: newMessageId(), role: "user", text: message, attachments: [] },
-        runtimeMode: router.runtimeMode,
-        interactionMode: router.interactionMode,
-        dispatchMode: "auto",
-        createdAt: nowIso(),
-      },
-    });
-    setSending(false);
-    if (result._tag === "Success") setText("");
-  };
-
-  return (
-    <RouterFrame>
-      <div className="flex min-w-0 items-center gap-2 text-xs">
-        <RouteIcon aria-hidden className="size-3.5 text-muted-foreground" />
-        <span className="font-medium">Router</span>
-        <TaskStatusPill task={task} />
-        <Button size="xs" variant="ghost-muted" className="ml-auto" onClick={openRouter}>
-          Open conversation
-        </Button>
-      </div>
-      <div className="flex items-end gap-2">
-        <Textarea
-          aria-label="Message the router"
-          placeholder="Tell the router what you need. It plans, delegates and follows up."
-          value={text}
-          rows={1}
-          className="min-h-9 flex-1 resize-none"
-          onChange={(event) => setText(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-              event.preventDefault();
-              void send();
-            }
-          }}
-        />
-        <Button
-          size="icon"
-          aria-label="Send to the router"
-          disabled={text.trim() === "" || sending}
-          onClick={() => void send()}
-        >
-          <ArrowUpIcon />
-        </Button>
-      </div>
-    </RouterFrame>
-  );
-}
-
 interface ModelOption {
   readonly value: string;
   readonly label: string;
   readonly selection: ModelSelection;
 }
 
-function RouterSetup({ projects }: { projects: ReadonlyArray<EnvironmentProject> }) {
+export function RouterSetup({ projects }: { projects: ReadonlyArray<EnvironmentProject> }) {
   const providers = useAtomValue(primaryServerProvidersAtom);
   const createThread = useOrchestrationCommand(threadEnvironment.create);
   const setTag = useOrchestrationCommand(threadEnvironment.setTag);
