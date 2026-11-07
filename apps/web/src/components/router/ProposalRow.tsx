@@ -87,7 +87,7 @@ export function ProposalRow({
         {task.threadId !== null ? (
           <span className="flex min-w-0 items-center gap-1.5 text-xs text-sidebar-muted-foreground">
             <CornerDownRightIcon aria-hidden className="size-3.5 shrink-0" />
-            <span className="truncate">Continues {continued?.title ?? "a thread"}</span>
+            <span className="truncate">Continues {continued?.title ?? "an archived thread"}</span>
           </span>
         ) : (
           <span className="flex min-w-0 items-center gap-1.5 text-xs text-sidebar-muted-foreground">

@@ -24,6 +24,8 @@ import { useEnvironment, usePrimaryEnvironmentId } from "../../state/environment
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { threadEnvironment } from "../../state/threads";
+import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { buildThreadRouteParams } from "../../threadRoutes";
 import { SidebarGroup, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "../ui/sidebar";
 import { ProposalRow } from "./ProposalRow";
@@ -164,11 +166,23 @@ export function RouterSection() {
  */
 function useOpenProposal() {
   const navigate = useNavigate();
+  const threads = useThreadShells();
+  const unarchive = useOrchestrationCommand(threadEnvironment.unarchive, { reportFailure: false });
   return async (environmentId: EnvironmentId, task: ScheduledTask) => {
     const store = useComposerDraftStore.getState();
     // A proposal to continue a thread opens in that thread, with the brief in its composer.
     if (task.threadId !== null) {
       const threadRef = scopeThreadRef(environmentId, task.threadId);
+      // Archived threads are not listed or opened, so the proposal brings it back first.
+      const listed = threads.some(
+        (thread) =>
+          thread.environmentId === environmentId &&
+          thread.id === task.threadId &&
+          thread.archivedAt === null,
+      );
+      if (!listed) {
+        await unarchive({ environmentId, input: { threadId: task.threadId } });
+      }
       if ((store.getComposerDraft(threadRef)?.prompt ?? "").trim() === "") {
         store.setPrompt(threadRef, readProposalSource(task.prompt).brief);
       }
