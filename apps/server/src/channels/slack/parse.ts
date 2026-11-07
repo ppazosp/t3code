@@ -154,13 +154,19 @@ export function escapeSlackText(text: string): string {
 const MARKDOWN_LIMIT = 12_000;
 
 /**
- * A plan as Markdown that cannot ping anyone or hide a link. Escaped `<`, `>` and `&` show as
- * text, and a backslash before every `[` stops inline and reference links, so only bare addresses
- * link, and they show themselves (measured in Slack for atta).
+ * Markdown that cannot ping anyone or hide a link. Escaped `<`, `>` and `&` show as text, and a
+ * backslash before every `[` stops inline and reference links, so only bare addresses link, and
+ * they show themselves (measured in Slack for atta). A Markdown link first becomes its label: a
+ * local file's path means nothing to the reader, and a web address is kept in brackets after it.
  */
 export const slackMarkdown = (text: string) =>
   // Backslashes first, so a model's own `\\[` cannot cancel the escape.
-  escapeSlackText(text).replaceAll("\\", "\\\\").replaceAll("[", "\\[");
+  escapeSlackText(plainLinks(text)).replaceAll("\\", "\\\\").replaceAll("[", "\\[");
+
+const plainLinks = (text: string) =>
+  text.replaceAll(/\[([^\]\n]+)\]\(([^)\s]+)\)/gu, (_, label: string, target: string) =>
+    /^https?:\/\//iu.test(target) ? `${label} (${target})` : label,
+  );
 
 export const slackMarkdownFits = (text: string) => slackMarkdown(text).length <= MARKDOWN_LIMIT;
 

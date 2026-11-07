@@ -96,6 +96,7 @@ describe("refs and replies", () => {
     assert.isTrue(Option.isNone(parseSlackRef("slack:C1:<!channel>")));
     assert.strictEqual(escapeSlackText("<!channel> & <@U1>"), "&lt;!channel&gt; &amp; &lt;@U1&gt;");
     // Markdown links stay text, and a backslash cannot undo that.
-    assert.strictEqual(slackMarkdown("[x](http://a) \\[y]"), "\\[x](http://a) \\\\\\[y]");
+    assert.strictEqual(slackMarkdown("[x](http://a) \\[y]"), "x (http://a) \\\\\\[y]");
+    assert.strictEqual(slackMarkdown("See [calc.py](/Users/me/calc.py)."), "See calc.py.");
   });
 });

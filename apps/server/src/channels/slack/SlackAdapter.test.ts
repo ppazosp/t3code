@@ -99,7 +99,7 @@ describe("SlackAdapter against a mock Slack", () => {
         assert.strictEqual(reply.threadTs, ts);
         assert.deepStrictEqual(reply.blocks, [
           // Markdown renders, but cannot ping anyone or hide a link.
-          { type: "markdown", text: "**Done** &lt;!channel&gt; \\[docs](http://x)" },
+          { type: "markdown", text: "**Done** &lt;!channel&gt; docs (http://x)" },
           {
             type: "data_visualization",
             title: "Orders",
