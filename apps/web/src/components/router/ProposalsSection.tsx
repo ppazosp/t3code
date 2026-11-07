@@ -1,5 +1,5 @@
 import { isProposalTask, type ScheduledTask } from "@t3tools/contracts";
-import { CheckIcon, LightbulbIcon, XIcon } from "lucide-react";
+import { LightbulbIcon, XIcon } from "lucide-react";
 import { useState } from "react";
 
 import { useEnvironment, usePrimaryEnvironmentId } from "../../state/environments";
@@ -14,7 +14,9 @@ import { ProposalDialog } from "./ProposalDialog";
 
 /**
  * The router's proposals, above the threads: work it suggests, waiting for the user. Each opens with
- * the project, workspace, model and effort the router chose, to change before accepting.
+ * the project, workspace, model and effort the router chose, to change before accepting. Accepting
+ * happens only there, with the brief and folder in view: the router reads channel messages anyone
+ * can write, and an accepted proposal runs with full access.
  */
 export function ProposalsSection() {
   const environmentId = usePrimaryEnvironmentId();
@@ -51,12 +53,6 @@ export function ProposalsSection() {
                 onClick={() => void actions.discard(environmentId, task)}
               >
                 <XIcon />
-              </ProposalQuickAction>
-              <ProposalQuickAction
-                label="Accept"
-                onClick={() => void actions.accept(environmentId, task)}
-              >
-                <CheckIcon />
               </ProposalQuickAction>
             </span>
           </SidebarMenuItem>
