@@ -66,6 +66,7 @@ export interface MockSlack {
 const NAMES: Record<string, string> = {
   UME: "Pablo",
   UMARIA: "Maria López",
+  UDIEGO: "Diego Ruiz",
   CENG: "eng",
   CWATCH: "eng",
   COTHER: "random",

@@ -8,16 +8,10 @@ import { SourceIcon } from "./SourceIcon";
  * tab shows it, and the message itself. The header the router reads stays out of sight.
  */
 export function ChannelMessageRow({ header, at }: { header: ChannelHeader; at: string }) {
-  const { where, author } = channelSourceLabels(header);
   return (
     <div className="flex justify-end" data-user-message-attribution="channel">
       <div className="w-fit max-w-[80%] min-w-72 rounded-2xl border border-border bg-card px-4 pt-3 pb-3.5">
-        <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-          <SourceIcon kind={header.channel} className="size-3.5 shrink-0" />
-          <span className="min-w-0 truncate">
-            {where} · {author} · <RelativeTime timestamp={at} />
-          </span>
-        </div>
+        <ChannelSourceLine header={header} at={at} />
         <blockquote
           className="mt-2 border-l-2 border-border pl-3 text-sm whitespace-pre-wrap text-foreground"
           data-thread-find-text="true"
@@ -25,6 +19,25 @@ export function ChannelMessageRow({ header, at }: { header: ChannelHeader; at: s
           {header.body}
         </blockquote>
       </div>
+    </div>
+  );
+}
+
+/** The channel's logo, where and who a message came from, and when, if known. */
+export function ChannelSourceLine({ header, at }: { header: ChannelHeader; at?: string }) {
+  const { where, author } = channelSourceLabels(header);
+  return (
+    <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+      <SourceIcon kind={header.channel} className="size-3.5 shrink-0" />
+      <span className="min-w-0 truncate">
+        {where} · {author}
+        {at === undefined ? null : (
+          <>
+            {" · "}
+            <RelativeTime timestamp={at} />
+          </>
+        )}
+      </span>
     </div>
   );
 }
