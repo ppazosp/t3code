@@ -1,5 +1,6 @@
 import {
   CommandId,
+  FROM_USER_TAG,
   PROPOSAL_TAG,
   type OrchestrationV2ThreadShell,
   type ThreadId,
@@ -46,6 +47,12 @@ export function slackOriginOf(text: string): string | null {
   return SLACK_HEADER.exec(header)?.[1] ?? null;
 }
 
+/** Whether the header says the user wrote the message, as the channel adapter writes it. */
+export function isFromUser(text: string): boolean {
+  const header = text.split("\n", 1)[0] ?? "";
+  return SLACK_HEADER.test(header) && /^\[slack \S+ from you ref=/u.test(header);
+}
+
 /**
  * Tags a thread the router just launched as a proposal, and with the Slack message the router was
  * reading when it launched it. Only a message the server wrote counts, so typed text cannot fake an
@@ -62,7 +69,12 @@ export const markRouterLaunch = Effect.fn("RouterProposals.markRouterLaunch")(fu
     trigger?.creationSource === "server" && trigger.text.startsWith("[slack ")
       ? slackOriginOf(trigger.text)
       : null;
-  const tags = [PROPOSAL_TAG, ...(origin === null ? [] : [origin])];
+  const fromUser = origin !== null && trigger !== undefined && isFromUser(trigger.text);
+  const tags = [
+    PROPOSAL_TAG,
+    ...(origin === null ? [] : [origin]),
+    ...(fromUser ? [FROM_USER_TAG] : []),
+  ];
   for (const tag of tags) {
     yield* threads.dispatch({
       type: "thread.tag.set",

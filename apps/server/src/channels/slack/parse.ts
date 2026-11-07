@@ -1,9 +1,11 @@
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
+import type { ChannelMessage } from "../Channel.ts";
+
 /**
  * Slack, as the router sees it. Socket Mode delivers events over a WebSocket, so the server needs
- * no public URL; replies go through the Web API. Only the fields atta reads are decoded.
+ * no public URL; replies go through the Web API. Only the fields T3 reads are decoded.
  */
 export interface SlackSettings {
   readonly botToken: string;
@@ -36,16 +38,6 @@ const EventsApiPayload = Schema.Struct({
   team_id: Schema.optional(Schema.String),
   event: Schema.Unknown,
 });
-
-/** One message the router should read. `ref` is where a reply goes: the channel and thread. */
-export interface ChannelMessage {
-  readonly id: string;
-  readonly ref: string;
-  readonly fromUser: boolean;
-  readonly where: string;
-  readonly author: string;
-  readonly text: string;
-}
 
 const decodePayload = Schema.decodeUnknownOption(EventsApiPayload);
 const decodeEvent = Schema.decodeUnknownOption(SlackMessageEvent);

@@ -6,7 +6,6 @@ import {
   CircleDotIcon,
   ClockIcon,
   EllipsisIcon,
-  EyeIcon,
   GitBranchIcon,
   LightbulbIcon,
   type LucideIcon,
@@ -38,7 +37,8 @@ import type { TaskActions } from "./useTaskActions";
 const STATUS_GLYPHS: Record<TaskStatus, { Icon: LucideIcon; className: string }> = {
   proposed: { Icon: LightbulbIcon, className: "text-primary" },
   needs_you: { Icon: CircleAlertIcon, className: "text-warning" },
-  review: { Icon: EyeIcon, className: "text-success" },
+  // Finished work waiting for review needs the user too, so it shares the Needs you column's icon.
+  review: { Icon: CircleAlertIcon, className: "text-warning" },
   working: { Icon: CircleDotIcon, className: "text-info" },
   done: { Icon: CircleCheckIcon, className: "text-muted-foreground" },
   snoozed: { Icon: AlarmClockIcon, className: "text-muted-foreground" },

@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest";
 import * as Option from "effect/Option";
 
-import { escapeSlackText, parseSlackRef, readSlackMessage, routerMessageText } from "./slack.ts";
+import { escapeSlackText, parseSlackRef, readSlackMessage, routerMessageText } from "./parse.ts";
 
 const settings = { trustedUserId: "UME", watchedChannels: new Set(["CWATCH"]) };
 const BOT = "UBOT";

@@ -268,12 +268,14 @@ function TaskCard({
             className="line-clamp-2 min-w-0 flex-1 text-sm leading-snug"
           />
         </span>
-        <span className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 pl-5.5">
-          <TaskSlackOrigin task={task} />
-          <TaskStatusPill task={task} />
-          <TaskModelLabel task={task} />
-          <TaskSubtaskCount task={task} />
+        <span className="flex min-w-0 flex-col gap-1 pl-5.5">
+          <span className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 empty:hidden">
+            <TaskSlackOrigin task={task} />
+            <TaskStatusPill task={task} />
+            <TaskSubtaskCount task={task} />
+          </span>
           <TaskBranchLabel task={task} />
+          <TaskModelLabel task={task} />
         </span>
       </span>
       <span className="pointer-events-none flex min-h-6 min-w-0 items-center gap-2 pl-5.5">

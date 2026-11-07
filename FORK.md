@@ -1,13 +1,13 @@
-# This fork
+# super-t3
 
-This fork of T3 Code adds a task view and a router on top of upstream. It is based on the stable tag `v0.1.7`, kept on the `stable` branch, and takes upstream at stable tags.
+super-t3 is a fork of T3 Code that turns it into a super-agent: a task board, a router that turns what you say (in T3 or in Slack) into proposed tasks, and channels that report each task back where it came from. It sits on top of upstream. It is based on the stable tag `v0.1.7`, kept on the `stable` branch, and takes upstream at stable tags.
 
 ## What it adds
 
 - Tasks: the home page, at `/tasks`. It shows threads as tasks in a board or a list, with no sidebar. A thread's delegated threads are its subtasks. The board has two columns: Proposed (waiting for your approval) and Needs you (approvals, questions and failures first, then finished work ready for review, with running work in a Working section at its foot). Like Linear, Done and Snoozed are hidden columns, listed at the right of the board with their counts; click one to see its tasks. The list folds the same two sections. Each card shows the model its session runs on, and carries the thread sidebar's actions: hover buttons to mark done and snooze, and the full thread menu on right-click or the "…" button, with a Status submenu. Dropping a card on Done settles it. Keys: `j` and `k` move, Enter opens, `/` searches, `c` writes to the router.
 - Inside a thread, the left sidebar lists the board's tasks by status, and the details panel on the right starts with the task: its title, its status (which you can change), the task it belongs to, its subtasks, and Approve for a proposal.
 - The router: one thread, tagged `router`, whose composer floats over the bottom of the board, with T3's own model and mode controls. Nothing else floats with it; the board shows around it. Once a message you send there reaches the router, its conversation opens like any other thread's. It reads, proposes tasks and follows them. It does not do the work itself.
-- Channels: Slack DMs and mentions from you, and every message in channels you choose, reach the router. Slack is input: what the router proposes from it waits in T3's Proposed column, and the router can only send short replies to your own messages. Approving from Slack and reporting results back to the Slack thread are planned for later.
+- Channels: outside conversations, each an adapter behind one interface (`apps/server/src/channels/Channel.ts`). Slack is the first. Your DMs and mentions, and every message in channels you choose, reach the router. What it proposes from them waits in the Proposed column, with the Slack logo, and super-t3 says so in the Slack thread. You approve in T3, never in Slack. Once you do, the task's progress shows in that thread as one message that follows the task's plan, step by step, and ends with its outcome and its last message. When you reply in that thread (in a DM, or with a mention in a channel), your reply goes straight to the task; when one conversation fed several tasks, it goes to the router instead. Progress messages live in memory, so a restart mid-run posts a fresh one for the next run rather than editing the old one.
 
 ## What the router can do
 
@@ -53,5 +53,5 @@ These upstream files carry small edits, and are where a merge can conflict:
 - `apps/server/src/mcp/threadAccess.ts` and `apps/server/src/mcp/OrchestratorMcpService.ts`: cap what the router starts.
 - `apps/server/src/mcp/McpToolAccess.ts`: refuses tools outside the router's list, and thread-starting tools to a proposal.
 - `apps/server/src/mcp/toolkits/project/handlers.ts`: tags what the router launches as a proposal.
-- `apps/server/src/mcp/McpHttpServer.ts` and `apps/server/src/server.ts`: register `channel_reply` and the channel listener.
+- `apps/server/src/mcp/McpHttpServer.ts` and `apps/server/src/server.ts`: register `channel_reply` and the channels with their bridge.
 - `apps/server/src/provider/agentContextBudget.json` and `AgentContextBudget.test.ts`: the tool list grew by `channel_reply`.

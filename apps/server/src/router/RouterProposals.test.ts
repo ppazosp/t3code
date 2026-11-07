@@ -4,6 +4,7 @@ import { ThreadId } from "@t3tools/contracts";
 
 import {
   beginRouterLaunch,
+  isFromUser,
   isProposalThread,
   PROPOSAL_TOOLS,
   slackOriginOf,
@@ -19,6 +20,12 @@ describe("RouterProposals", () => {
     );
     assert.isNull(slackOriginOf("hello\n[slack dm from you ref=slack:D1:1.1]"));
     assert.isNull(slackOriginOf("[slack dm from you ref=slack:D1:<!channel>]"));
+  });
+
+  it("reads who wrote a channel message only from the header line", () => {
+    assert.isTrue(isFromUser("[slack dm from you ref=slack:D1:1.1]\n> fix it"));
+    assert.isFalse(isFromUser("[slack #C01 from @U2 ref=slack:C01:1.1]\n> from you ref="));
+    assert.isFalse(isFromUser("[slack #C01 from @you ref=slack:C01:1.1]"));
   });
 
   it("marks proposals by tag, and lets them only read until they are approved", () => {
