@@ -81,7 +81,7 @@ export function RouterSection() {
           <SidebarMenuItem key={task.id} className="group/proposal">
             <SidebarMenuButton onClick={() => setOpenId(task.id)}>
               {/* Wrapped, so the menu button's own icon color does not override it. */}
-              <span className="flex shrink-0 text-warning">
+              <span className="flex shrink-0 text-primary">
                 <LightbulbIcon className="size-4" />
               </span>
               <span className="min-w-0 flex-1 truncate">{task.title}</span>

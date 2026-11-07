@@ -161,7 +161,7 @@ export function ProposalDialog({
       <DialogPopup className="max-w-2xl">
         <DialogHeader>
           <div className="flex items-start gap-3">
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-warning/10 text-warning">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
               <LightbulbIcon aria-hidden className="size-4" />
             </span>
             <div className="flex min-w-0 flex-1 flex-col gap-0.5">
