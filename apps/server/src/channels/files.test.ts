@@ -1,3 +1,6 @@
+// @effect-diagnostics nodeBuiltinImport:off - mkfifo has no Node or Effect API.
+import * as NodeChildProcess from "node:child_process";
+
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -53,6 +56,9 @@ describe("files a worker attaches", () => {
       assert.include(yield* open(path.join(outside, "secret.png")), "inside your working folder");
       assert.include(yield* open("../x.png"), "no such file");
       assert.include(yield* open("shot.png", 10), "takes files up to");
+      // A pipe would hang the open until someone writes to it.
+      NodeChildProcess.execFileSync("mkfifo", [path.join(root, "pipe.png")]);
+      assert.include(yield* open("pipe.png"), "not a file");
 
       // The upload reads the file it checked; one that grew since stops rather than posting.
       const grown = yield* openChannelFile(root, "shot.png", 1000);

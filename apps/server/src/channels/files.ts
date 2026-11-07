@@ -54,6 +54,9 @@ export const openChannelFile = Effect.fn("Channels.openFile")(function* (
   if (inside === "" || inside.startsWith("..") || path.isAbsolute(inside)) {
     return yield* refuse("attach only files inside your working folder.");
   }
+  // Opening a pipe would block until something writes to it, so only a regular file is opened.
+  const kind = yield* fs.stat(real).pipe(Effect.mapError(() => refuse("could not be read.")));
+  if (kind.type !== "File") return yield* refuse("not a file.");
   // One handle for every check and the upload, so a link swapped in later cannot change the file.
   const file = yield* fs
     .open(real, { noFollow: true })
