@@ -61,6 +61,8 @@ function runBridge(input: {
   readonly existing?: ReadonlyArray<ReturnType<typeof thread>>;
   readonly history?: ReadonlyArray<ChannelHistoryEntry>;
   readonly state?: ChannelBridge.BridgeState;
+  /** How many runs T3 has for the task. */
+  readonly runs?: number;
 }) {
   const posts: Array<{ ref: string; text: string; charts: ReadonlyArray<ChannelChart> }> = [];
   const sent: Array<{ threadId: string; text: string }> = [];
@@ -93,6 +95,8 @@ function runBridge(input: {
       }),
     dispatch: (command: Record<string, unknown>) =>
       Effect.sync(() => void dispatched.push(command)),
+    getThreadProjection: () =>
+      Effect.succeed({ runs: Array.from({ length: input.runs ?? 1 }, (_, index) => ({ index })) }),
   } as never;
   const engine = { streamDomainEvents: Stream.fromIterable(input.events ?? []) } as never;
   const state = input.state ?? ChannelBridge.makeState();
@@ -133,6 +137,24 @@ describe("ChannelBridge", () => {
         [ORIGIN, "working"],
         [ORIGIN, "idle"],
       ]);
+    }),
+  );
+
+  it.effect("does not say again that a task started when it already ran, as after a restart", () =>
+    Effect.gen(function* () {
+      const { posts } = yield* runBridge({
+        existing: [task],
+        runs: 3,
+        events: [
+          runEvent("run.created", "running"),
+          itemEvent({ type: "assistant_message", text: "Charted it.", streaming: false }),
+          runEvent("run.updated", "completed"),
+        ],
+      });
+      assert.deepStrictEqual(
+        posts.map((post) => post.text),
+        ["Charted it."],
+      );
     }),
   );
 

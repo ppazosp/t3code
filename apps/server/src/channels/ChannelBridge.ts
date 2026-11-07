@@ -1,6 +1,7 @@
 import {
   CommandId,
   MessageId,
+  ThreadId,
   type OrchestrationV2AppThread,
   type OrchestrationV2DomainEvent,
   type OrchestrationV2Run,
@@ -163,7 +164,7 @@ export const run = Effect.fn("ChannelBridge.run")(function* (input: {
   const reports = new Map<string, RunReport>();
   // The run each thread is on, so a worker tagged after its run started is still reported.
   const activeRuns = new Map<string, string>();
-  // Tasks that said they started, and the message each task last read up to in its conversation.
+  // Tasks already followed, and the message each task last read up to in its conversation.
   const started = new Set<string>();
   const lastRead = new Map<string, string>();
 
@@ -338,6 +339,12 @@ export const run = Effect.fn("ChannelBridge.run")(function* (input: {
     if (started.has(thread.id)) return;
     started.add(thread.id);
     if (started.size > LIMIT) started.delete(started.values().next().value!);
+    // Only a task's first run says it started; T3 keeps the runs, so a restart does not repeat it.
+    const runs = yield* threads.getThreadProjection(ThreadId.make(thread.id)).pipe(
+      Effect.map((projection) => projection.runs.length),
+      Effect.orElseSucceed(() => 1),
+    );
+    if (runs > 1) return;
     yield* adapter.post(ref, { text: startText(thread.title) });
   });
 

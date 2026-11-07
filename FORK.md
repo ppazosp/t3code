@@ -14,7 +14,7 @@ super-t3 is a fork of T3 Code that turns it into a super-agent. It keeps T3's ow
   - Say "stop" there (with a mention in a channel), or press Stop in Slack's agent panel, and the conversation's workers stop.
   - super-t3 is a Slack agent: in your DMs, its panel shows it working, with a Stop button, ready once it answers, and waiting while a plan needs your answer. Agents need a paid Slack plan; on a free one Slack shows super-t3 as an ordinary app.
   - Workers read Slack beyond their conversation through whatever Slack connector your agent setup has, such as Slack's MCP server.
-  - Which tasks said they started, and how far each read its conversation, live in memory: after a restart a task says again that it started, and your next tag passes it the conversation's latest messages.
+  - How far each task has read its conversation lives in memory: after a restart, your next tag passes it the conversation's latest messages.
 
 ## Add a channel
 
