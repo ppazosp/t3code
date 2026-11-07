@@ -150,7 +150,6 @@ import {
   useDelegatedUnderParent,
   useProjects,
   useServerConfigs,
-  useQuietThreadShells,
 } from "../state/entities";
 import { environmentPresentations } from "../state/presentation";
 import { primaryServerKeybindingsAtom } from "../state/server";
@@ -230,6 +229,9 @@ import {
 } from "./Sidebar.snooze";
 import { ProjectFavicon } from "./ProjectFavicon";
 import { deriveProviderEntriesByEnvironment } from "../providerInstances";
+import { RouterSection } from "./router/RouterSection";
+import { isProposalDraft } from "./router/proposalDrafts";
+import { useListedThreadShells } from "./router/useListedThreadShells";
 import { useStableCallback } from "../hooks/useStableCallback";
 import {
   resolveSidebarRouteReveal,
@@ -1117,7 +1119,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             ),
           ),
         );
-  const threads = useQuietThreadShells();
+  // super-t3: the router has its own button, so it is left out of the list.
+  const threads = useListedThreadShells();
   const routeRowThreadKey =
     routeThreadRef === null
       ? null
@@ -1209,7 +1212,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const visibleDraftSessionCount = useComposerDraftStore((store) => {
     let count = 0;
     for (const [draftKey, session] of Object.entries(store.draftThreadsByThreadKey)) {
-      if (session.promotedTo != null) {
+      // super-t3: a proposal's draft is listed under Proposals instead.
+      if (session.promotedTo != null || isProposalDraft(draftKey)) {
         continue;
       }
       if (!composerDraftHasUserContent(store.draftsByThreadKey[draftKey])) {
@@ -3206,6 +3210,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           </SidebarGroup>
         }
       >
+        {/* super-t3: the router and its proposals, above the threads. */}
+        <RouterSection />
         <SidebarGroup className="flex-1" role="presentation">
           {isSearchingThreads ? (
             threadSearchResults.length > 0 ? (

@@ -56,6 +56,11 @@ export const ProviderAdapterV2RuntimePolicy = Schema.Struct({
    * it; adapters use it to refuse native mode choices a user makes beside T3 Code's own.
    */
   maxRuntimeMode: Schema.optional(RuntimeMode),
+  /**
+   * The only T3 tools the agent gets, and they run without asking, even where the sandbox would
+   * make the provider ask. Set for the router, whose shell is read-only and whose work is these.
+   */
+  t3ToolAllowlist: Schema.optional(Schema.Array(Schema.String)),
 });
 export type ProviderAdapterV2RuntimePolicy = typeof ProviderAdapterV2RuntimePolicy.Type;
 

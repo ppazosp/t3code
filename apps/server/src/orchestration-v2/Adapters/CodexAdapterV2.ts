@@ -1399,6 +1399,7 @@ function codexThreadRuntimeParams(input: {
           tool_timeout_sec: CODEX_T3_MCP_TOOL_TIMEOUT_SEC,
           http_headers: { Authorization: mcpSession.authorizationHeader },
         };
+  const allowlist = input.runtimePolicy?.t3ToolAllowlist;
   return {
     ...(input.runtimePolicy?.cwd == null ? {} : { cwd: input.runtimePolicy.cwd }),
     ...(input.modelSelection === undefined ? {} : { model: input.modelSelection.model }),
@@ -1412,13 +1413,28 @@ function codexThreadRuntimeParams(input: {
         ? {}
         : {
             // Override only T3's servers so launch-argument MCP servers survive.
-            "mcp_servers.t3-code": { ...t3Server, disabled_tools: [CODEX_DIRECT_ONLY_T3_TOOL] },
+            "mcp_servers.t3-code": {
+              ...t3Server,
+              disabled_tools: [CODEX_DIRECT_ONLY_T3_TOOL],
+              // Codex declines a call it cannot ask about when the sandbox is not full access,
+              // so allowlisted tools are approved up front.
+              ...(allowlist === undefined
+                ? {}
+                : {
+                    enabled_tools: allowlist.filter((tool) => tool !== CODEX_DIRECT_ONLY_T3_TOOL),
+                    default_tools_approval_mode: "approve",
+                  }),
+            },
             // Code Mode runs a blocking wait as a nested call, and the model keeps working
             // around it. A second, direct-only registration makes it a plain tool call.
             [`mcp_servers.${CODEX_T3_DIRECT_MCP_SERVER}`]: {
               ...t3Server,
-              enabled_tools: [CODEX_DIRECT_ONLY_T3_TOOL],
+              enabled_tools:
+                allowlist === undefined || allowlist.includes(CODEX_DIRECT_ONLY_T3_TOOL)
+                  ? [CODEX_DIRECT_ONLY_T3_TOOL]
+                  : [],
               omit_tools_from: ["code_mode", "deferred"],
+              ...(allowlist === undefined ? {} : { default_tools_approval_mode: "approve" }),
             },
           }),
     },
