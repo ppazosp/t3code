@@ -52,7 +52,10 @@ describe("Proposals", () => {
     assert.deepStrictEqual(resolveModelOptions(guessed, "High", providers).options, [
       { id: "reasoningEffort", value: "high" },
     ]);
-    assert.deepStrictEqual(resolveModelOptions(guessed, undefined, providers).options, []);
+    // With no effort given, the guessed option still counts.
+    assert.deepStrictEqual(resolveModelOptions(guessed, undefined, providers).options, [
+      { id: "reasoningEffort", value: "low" },
+    ]);
     assert.deepStrictEqual(resolveModelOptions(guessed, "extreme", providers).options, []);
   });
 });

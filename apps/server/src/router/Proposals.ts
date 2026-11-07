@@ -64,7 +64,13 @@ export function resolveModelOptions(
       descriptor.type === "select" &&
       (descriptor.role === "reasoning" || descriptor.id === "reasoningEffort"),
   );
-  const wanted = effort?.trim().toLowerCase();
+  // Routers often put effort among the options under a guessed name; read it back from there too.
+  const guessedEffort = (selection.options ?? []).find(
+    (option) => /effort|reasoning/iu.test(option.id) && typeof option.value === "string",
+  )?.value;
+  const wanted = (effort ?? (typeof guessedEffort === "string" ? guessedEffort : undefined))
+    ?.trim()
+    .toLowerCase();
   const choice =
     reasoning?.type === "select" && wanted
       ? reasoning.options.find(
