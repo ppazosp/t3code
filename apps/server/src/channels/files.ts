@@ -29,6 +29,8 @@ export function mediaType(header: Uint8Array): string | undefined {
   return "video/mp4";
 }
 
+const CHUNK = 64 * 1024;
+
 const megabytes = (bytes: number) => `${Math.round(bytes / 1024 / 1024)} MB`;
 
 /**
@@ -52,7 +54,11 @@ export const openChannelFile = Effect.fn("Channels.openFile")(function* (
   if (inside === "" || inside.startsWith("..") || path.isAbsolute(inside)) {
     return yield* refuse("attach only files inside your working folder.");
   }
-  const info = yield* fs.stat(real).pipe(Effect.mapError(() => refuse("could not be read.")));
+  // One handle for every check and the upload, so a link swapped in later cannot change the file.
+  const file = yield* fs
+    .open(real, { noFollow: true })
+    .pipe(Effect.mapError(() => refuse("could not be read.")));
+  const info = yield* file.stat.pipe(Effect.mapError(() => refuse("could not be read.")));
   if (info.type !== "File") return yield* refuse("not a file.");
   const size = Number(info.size);
   if (size === 0) return yield* refuse("the file is empty.");
@@ -61,17 +67,23 @@ export const openChannelFile = Effect.fn("Channels.openFile")(function* (
       `it is ${megabytes(size)}; this channel takes files up to ${megabytes(limit)}.`,
     );
   }
-  const header = yield* fs.open(real).pipe(
-    Effect.flatMap((file) => file.readAlloc(64)),
-    Effect.scoped,
-    Effect.mapError(() => refuse("could not be read.")),
-  );
+  const header = yield* file
+    .readAlloc(64, { position: 0n })
+    .pipe(Effect.mapError(() => refuse("could not be read.")));
   const mimeType = mediaType(Option.getOrElse(header, () => new Uint8Array()));
   if (mimeType === undefined) return yield* refuse("attach only images or videos.");
-  return {
-    name: path.basename(real),
-    size,
-    mimeType,
-    bytes: fs.stream(real).pipe(Stream.mapError(() => refuse("could not be read."))),
-  } satisfies ChannelFile;
+  const bytes = Stream.unfold(0, (sent: number) =>
+    Effect.gen(function* () {
+      const chunk = yield* file
+        .readAlloc(CHUNK, { position: BigInt(sent) })
+        .pipe(Effect.mapError(() => refuse("could not be read.")));
+      if (Option.isSome(chunk) && sent + chunk.value.length <= size) {
+        return [chunk.value, sent + chunk.value.length] as const;
+      }
+      // Slack was told the size; a file that changed since must not upload in part.
+      if (Option.isNone(chunk) && sent === size) return undefined;
+      return yield* refuse("the file changed while it uploaded.");
+    }),
+  );
+  return { name: path.basename(real), size, mimeType, bytes } satisfies ChannelFile;
 });

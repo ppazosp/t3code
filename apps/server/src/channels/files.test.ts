@@ -53,6 +53,12 @@ describe("files a worker attaches", () => {
       assert.include(yield* open(path.join(outside, "secret.png")), "inside your working folder");
       assert.include(yield* open("../x.png"), "no such file");
       assert.include(yield* open("shot.png", 10), "takes files up to");
+
+      // The upload reads the file it checked; one that grew since stops rather than posting.
+      const grown = yield* openChannelFile(root, "shot.png", 1000);
+      yield* fs.writeFile(path.join(root, "shot.png"), new Uint8Array([...PNG, 9, 9]));
+      const changed = yield* Stream.runCollect(grown.bytes).pipe(Effect.flip);
+      assert.include(changed.message, "changed while it uploaded");
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 });

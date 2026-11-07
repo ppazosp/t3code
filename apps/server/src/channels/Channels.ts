@@ -160,10 +160,12 @@ export const layer: Layer.Layer<
           return yield* new ChannelError({ message: `${adapter.name} takes no files.` });
         }
         const root = paths.length === 0 ? "" : yield* workingFolder(shell);
-        const files = yield* Effect.forEach(paths, (path) =>
+        yield* Effect.forEach(paths, (path) =>
           openChannelFile(root, path, adapter.fileLimit).pipe(Effect.provide(fileServices)),
+        ).pipe(
+          Effect.flatMap((files) => adapter.post(ref, { text, files })),
+          Effect.scoped,
         );
-        yield* adapter.post(ref, { text, files });
       }),
       read: Effect.fn("Channels.read")(function* (ref, limit) {
         const adapter = yield* adapterFor(ref);
