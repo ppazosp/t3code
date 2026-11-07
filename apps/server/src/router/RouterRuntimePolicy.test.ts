@@ -5,23 +5,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import { RuntimePolicyV2 } from "../orchestration-v2/RuntimePolicy.ts";
-import { capRouterLimits, layer } from "./RouterRuntimePolicy.ts";
-
-describe("capRouterLimits", () => {
-  const limits = { runtimeMode: "full-access", interactionMode: "default" } as const;
-
-  it("lets the router start only plans that write nowhere but their workspace", () => {
-    assert.deepStrictEqual(capRouterLimits({ tags: ["router"] }, limits), {
-      runtimeMode: "auto-accept-edits",
-      interactionMode: "plan",
-    });
-  });
-
-  it("leaves every other thread's limits as they are", () => {
-    assert.strictEqual(capRouterLimits({ tags: ["other"] }, limits), limits);
-    assert.strictEqual(capRouterLimits({}, limits), limits);
-  });
-});
+import { layer } from "./RouterRuntimePolicy.ts";
 
 describe("RouterRuntimePolicy.layer", () => {
   const base = Layer.succeed(RuntimePolicyV2, {
@@ -43,16 +27,17 @@ describe("RouterRuntimePolicy.layer", () => {
       });
     }).pipe(Effect.provide(layer.pipe(Layer.provide(base))));
 
-  it.effect("runs a proposal read-only, so it cannot edit before approval", () =>
+  it.effect("runs the router read-only, with only its own T3 tools", () =>
     Effect.gen(function* () {
-      const policy = yield* resolve(["proposal"]);
+      const policy = yield* resolve(["router"]);
       assert.deepStrictEqual(policy.sandboxPolicy, { type: "readOnly" });
       assert.strictEqual(policy.approvalPolicy, "never");
-      assert.isUndefined(policy.t3ToolAllowlist);
+      assert.include(policy.t3ToolAllowlist ?? [], "propose_task");
+      assert.notInclude(policy.t3ToolAllowlist ?? [], "t3_thread_launch");
     }),
   );
 
-  it.effect("leaves an approved task's policy as the project sets it", () =>
+  it.effect("leaves every other thread's policy as the project sets it", () =>
     Effect.gen(function* () {
       const policy = yield* resolve([]);
       assert.isUndefined(policy.sandboxPolicy);

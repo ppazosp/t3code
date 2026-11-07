@@ -5,7 +5,7 @@ import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { isElectron } from "../env";
-import { RouterHome } from "../components/tasks/RouterHome";
+import { RouterHome } from "../components/router/RouterHome";
 import { NoProjectsHero } from "../components/NoProjectsHero";
 import { sortScopedProjectsForSidebar } from "../components/Sidebar.logic";
 import { Button } from "../components/ui/button";

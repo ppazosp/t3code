@@ -14,11 +14,8 @@ import type * as ThreadManagementService from "../orchestration-v2/ThreadManagem
 import { routerMessageText } from "./slack/parse.ts";
 import type { ChannelAdapter, ChannelMessage, Progress, ProgressStep } from "./Channel.ts";
 import {
-  announceTarget,
-  isProposal,
   isRouter,
   progressSteps,
-  proposalNote,
   reportTarget,
   taskForMessage,
   type BridgeThread,
@@ -76,8 +73,8 @@ interface RunReport {
 
 /**
  * Connects channels to T3. A message goes to the router, or, when the user replies where exactly one
- * task came from, to that task. T3's events flow back: a proposal from a channel is announced
- * there, and each run of an approved task shows its progress and result there.
+ * worker came from, to that worker. T3's events flow back: each run of a worker the user asked for
+ * in a channel shows its progress and result there.
  */
 export const run = Effect.fn("ChannelBridge.run")(function* (input: {
   readonly adapters: ReadonlyArray<ChannelAdapter>;
@@ -91,16 +88,15 @@ export const run = Effect.fn("ChannelBridge.run")(function* (input: {
   const adapterFor = (ref: string) => adapters.find((adapter) => ref.startsWith(adapter.prefix));
 
   const known = new Map<string, BridgeThread>();
-  const announced = new Set<string>();
   for (const shell of yield* threads
     .listProjectThreads({ includeSubagents: false })
     .pipe(Effect.orElseSucceed(() => []))) {
     const thread = toBridgeThread(shell);
     known.set(thread.id, thread);
-    // Proposals from before a restart were announced already.
-    if (isProposal(thread)) announced.add(thread.id);
   }
   const reports = new Map<string, RunReport>();
+  // The run each thread is on, so a worker tagged after its run started is still reported.
+  const activeRuns = new Map<string, string>();
 
   const deliver = Effect.fn("ChannelBridge.deliver")(
     function* (message: ChannelMessage) {
@@ -143,29 +139,38 @@ export const run = Effect.fn("ChannelBridge.run")(function* (input: {
       progress: { title: report.title, steps: report.steps, finished },
     });
 
+  /** Starts reporting a thread's active run, once the thread is one to report. */
+  const startReport = Effect.fn("ChannelBridge.startReport")(function* (
+    thread: BridgeThread,
+    runId: string,
+  ) {
+    if (reports.has(runId)) return;
+    const ref = reportTarget(thread, prefixes);
+    const adapter = ref === null ? undefined : adapterFor(ref);
+    if (ref === null || adapter === undefined) return;
+    const progress: Progress = { title: thread.title, steps: [], finished: null };
+    const message = yield* adapter.showProgress({ ref, message: null, progress });
+    reports.set(runId, { adapter, ref, message, title: thread.title, steps: [], result: null });
+  });
+
   const onRun = Effect.fn("ChannelBridge.onRun")(function* (runRecord: OrchestrationV2Run) {
     const report = reports.get(runRecord.id);
     if (report === undefined) {
+      if (!ACTIVE_RUN.has(runRecord.status)) {
+        if (activeRuns.get(runRecord.threadId) === runRecord.id) {
+          activeRuns.delete(runRecord.threadId);
+        }
+        return;
+      }
+      activeRuns.set(runRecord.threadId, runRecord.id);
       const thread = known.get(runRecord.threadId);
-      if (thread === undefined || !ACTIVE_RUN.has(runRecord.status)) return;
-      const ref = reportTarget(thread, prefixes);
-      const adapter = ref === null ? undefined : adapterFor(ref);
-      if (ref === null || adapter === undefined) return;
-      const progress: Progress = { title: thread.title, steps: [], finished: null };
-      const message = yield* adapter.showProgress({ ref, message: null, progress });
-      reports.set(runRecord.id, {
-        adapter,
-        ref,
-        message,
-        title: thread.title,
-        steps: [],
-        result: null,
-      });
+      if (thread !== undefined) yield* startReport(thread, runRecord.id);
       return;
     }
     const outcome = OUTCOME[runRecord.status];
     if (outcome === undefined) return;
     reports.delete(runRecord.id);
+    activeRuns.delete(runRecord.threadId);
     yield* show(report, { outcome, result: report.result });
   });
 
@@ -174,17 +179,9 @@ export const run = Effect.fn("ChannelBridge.run")(function* (input: {
       if (isThreadEvent(event)) {
         const thread = toBridgeThread(event.payload);
         known.set(thread.id, thread);
-        const origin = announceTarget(thread, prefixes);
-        const adapter = origin === null ? undefined : adapterFor(origin);
-        if (
-          origin !== null &&
-          adapter !== undefined &&
-          isProposal(thread) &&
-          !announced.has(thread.id)
-        ) {
-          announced.add(thread.id);
-          yield* adapter.post(origin, proposalNote(thread.title));
-        }
+        // An accepted proposal's worker is tagged after its run has started.
+        const runId = activeRuns.get(thread.id);
+        if (runId !== undefined) yield* startReport(thread, runId);
         return;
       }
       if (event.type === "run.created" || event.type === "run.updated") {

@@ -60,34 +60,23 @@ function runBridge(input: {
 }
 
 describe("ChannelBridge", () => {
-  it.effect("announces a proposal, then reports its approved run with steps and result", () =>
+  it.effect("reports each run of a worker the user asked for, with its steps and result", () =>
     Effect.gen(function* () {
       const { posts, progress } = yield* runBridge({
         events: [
-          threadEvent({ tags: ["proposal", ORIGIN, "from-you"], interactionMode: "plan" }),
-          // The proposal's own planning run is not reported.
+          // An accepted proposal's worker starts before it is tagged with where it came from.
+          threadEvent({ tags: [] }),
           runEvent("run.created", "running"),
-          runEvent("run.updated", "completed"),
-          // Approve: the tag goes, the mode changes, and a new run starts.
           threadEvent({ tags: [ORIGIN, "from-you"] }),
-          runEvent("run.created", "running", "run:2"),
-          itemEvent(
-            { type: "todo_list", steps: [{ id: "s1", text: "Write the fix", status: "running" }] },
-            "run:2",
-          ),
-          itemEvent(
-            { type: "assistant_message", text: "Fixed and pushed.", streaming: false },
-            "run:2",
-          ),
-          runEvent("run.updated", "completed", "run:2"),
+          itemEvent({
+            type: "todo_list",
+            steps: [{ id: "s1", text: "Write the fix", status: "running" }],
+          }),
+          itemEvent({ type: "assistant_message", text: "Fixed and pushed.", streaming: false }),
+          runEvent("run.updated", "completed"),
         ],
       });
-      assert.deepStrictEqual(posts, [
-        {
-          ref: ORIGIN,
-          text: "Proposed in T3: Fix the export. It starts when you approve it there.",
-        },
-      ]);
+      assert.deepStrictEqual(posts, []);
       assert.deepStrictEqual(
         progress.map((call) => [call.message, call.progress.steps.length, call.progress.finished]),
         [
@@ -96,6 +85,19 @@ describe("ChannelBridge", () => {
           ["slack:D1:1700000000.000200", 1, { outcome: "completed", result: "Fixed and pushed." }],
         ],
       );
+    }),
+  );
+
+  it.effect("never reports a worker proposed from someone else's message", () =>
+    Effect.gen(function* () {
+      const { progress } = yield* runBridge({
+        events: [
+          threadEvent({ tags: [ORIGIN] }),
+          runEvent("run.created", "running"),
+          runEvent("run.updated", "completed"),
+        ],
+      });
+      assert.deepStrictEqual(progress, []);
     }),
   );
 
@@ -125,16 +127,5 @@ describe("ChannelBridge", () => {
         );
         assert.strictEqual(sent[0]!.text, "also handle CSV");
       }),
-  );
-
-  it.effect("does not announce proposals that existed before a restart", () =>
-    Effect.gen(function* () {
-      const proposal = { tags: ["proposal", ORIGIN], interactionMode: "plan" };
-      const { posts } = yield* runBridge({
-        existing: [thread("task", proposal)],
-        events: [threadEvent(proposal)],
-      });
-      assert.deepStrictEqual(posts, []);
-    }),
   );
 });

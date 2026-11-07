@@ -1,4 +1,5 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { ROUTER_TAG } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
 
@@ -10,7 +11,6 @@ import {
 import { buildThreadRouteParams } from "../../threadRoutes";
 import { SidebarInset } from "../ui/sidebar";
 import { RouterSetup } from "./RouterSetup";
-import { isRouterThread } from "./tasks.logic";
 
 /**
  * Home is the router: its conversation opens beside the task sidebar. Until there is a router, home
@@ -20,7 +20,7 @@ export function RouterHome({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
   const router = useThreadShells().find(
-    (thread) => isRouterThread(thread) && thread.archivedAt === null,
+    (thread) => thread.source.tags?.includes(ROUTER_TAG) === true && thread.archivedAt === null,
   );
   const projects = useProjects().filter((project) => project.archivedAt == null);
 

@@ -16,7 +16,6 @@ import type { OrchestratorV2Error } from "../orchestration-v2/Orchestrator.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
 import { resolveInteractionMode, resolveRuntimeMode } from "./delegatedTaskModes.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
-import { capRouterLimits } from "../router/RouterRuntimePolicy.ts";
 
 /**
  * Threads an agent starts over MCP are `mcp:<uuid>`, and agents often paste the
@@ -108,10 +107,7 @@ export const loadCaller = Effect.fn("mcp.loadCaller")(function* () {
     scope,
     threads,
     caller,
-    limits: capRouterLimits(caller, {
-      runtimeMode: caller.runtimeMode,
-      interactionMode: caller.interactionMode,
-    }),
+    limits: { runtimeMode: caller.runtimeMode, interactionMode: caller.interactionMode },
   } satisfies Caller;
 });
 

@@ -32,7 +32,6 @@ const oldProviderThreadId = ThreadId.make("thread:old-provider-background");
 const archivedThreadId = ThreadId.make("thread:archived-background");
 const unknownOwnerThreadId = ThreadId.make("thread:unknown-background-owner");
 const routerThreadId = ThreadId.make("thread:router");
-const proposalThreadId = ThreadId.make("thread:proposal");
 
 const backgroundShell = (threadId: ThreadId, providerInstanceId: ProviderInstanceId) => ({
   ...liveThreadShell(threadId, { activeRunId: null }),
@@ -49,7 +48,6 @@ const shells = new Map([
   ],
   [fullAccessThreadId, liveThreadShell(fullAccessThreadId)],
   [routerThreadId, { ...liveThreadShell(routerThreadId), tags: ["router"] }],
-  [proposalThreadId, { ...liveThreadShell(proposalThreadId), tags: ["proposal"] }],
   [endedThreadId, liveThreadShell(endedThreadId, { activeRunId: null })],
   [backgroundThreadId, backgroundShell(backgroundThreadId, ProviderInstanceId.make("codex"))],
   [oldProviderThreadId, backgroundShell(oldProviderThreadId, ProviderInstanceId.make("claude"))],
@@ -133,9 +131,9 @@ const ProbeToolkit = Toolkit.make(
     }),
   }),
   Tool.make("writes_environment", probe),
-  // Named like a real tool that messages another thread, which a proposal may not call.
+  // Named like a real tool that messages another thread, which the router may not call.
   Tool.make("t3_thread_send", probe),
-  // Named like a real read tool, which a proposal may call.
+  // Named like a real read tool, which the router may call.
   Tool.make("t3_thread_read", probe),
 );
 const ran = Effect.succeed({ ran: "ran" });
@@ -238,7 +236,6 @@ const oldProviderBackground = threadCaller(oldProviderThreadId);
 const archivedBackground = threadCaller(archivedThreadId);
 const unknownOwnerBackground = threadCaller(unknownOwnerThreadId);
 const router = threadCaller(routerThreadId);
-const proposal = threadCaller(proposalThreadId);
 const mismatchedProvider = {
   ...background,
   thread: { ...background.thread!, providerInstanceId: ProviderInstanceId.make("claude") },
@@ -264,10 +261,8 @@ it.effect.each([
   // The router gets only its own tools, which these probes are not.
   ["reads", router, {}, "capability_denied"],
   ["starts_threads", router, {}, "capability_denied"],
-  // A proposal only reads until it is approved: its read tools run, and nothing else does.
-  ["t3_thread_send", proposal, {}, "capability_denied"],
-  ["reads", proposal, {}, "capability_denied"],
-  ["t3_thread_read", proposal, {}, "ran"],
+  ["t3_thread_send", router, {}, "capability_denied"],
+  ["t3_thread_read", router, {}, "ran"],
   ["t3_thread_send", supervised, {}, "ran"],
 
   ["writes", readOnlyClient, {}, "capability_denied"],

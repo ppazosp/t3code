@@ -42,6 +42,7 @@ import { GitVcsDriver } from "../vcs/GitVcsDriver.ts";
 import { VcsStatusBroadcaster } from "../vcs/VcsStatusBroadcaster.ts";
 import { buildCodexAdditionalContext } from "./CodexDeveloperInstructions.ts";
 import * as Channels from "../channels/Channels.ts";
+import * as Proposals from "../router/Proposals.ts";
 import { DocumentText } from "./DocumentText.ts";
 import { ProviderRegistry } from "./ProviderRegistry.ts";
 import budget from "./agentContextBudget.json" with { type: "json" };
@@ -80,6 +81,7 @@ const toolHandlerServices = Layer.mergeAll(
   Layer.mock(ThreadSearch)({}),
   Layer.mock(VcsStatusBroadcaster)({}),
   Layer.mock(Channels.Channels)({}),
+  Layer.mock(Proposals.Proposals)({}),
 ).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
 
 const utf8Bytes = (text: string) => Buffer.byteLength(text, "utf8");

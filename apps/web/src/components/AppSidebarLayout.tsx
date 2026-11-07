@@ -39,9 +39,10 @@ import {
 } from "../panelAnimations";
 import { BackgroundThreadAnnouncer } from "./BackgroundThreadAnnouncer";
 import { HistorySwipeNavigation } from "./HistorySwipeNavigation";
-import TaskSidebar from "./tasks/TaskSidebar";
+import ThreadSidebar from "./Sidebar";
 import { SidebarBrandWidthProbe } from "./sidebar/SidebarChrome";
 import { isAppModalPage } from "./sidebar/mainAppLocation";
+import type { SidebarRouteReveal } from "./sidebar/routeReveal";
 import { useSidebarStageBackdropVariant } from "./SidebarStageBackdrop";
 import {
   clampThreadSidebarWidth,
@@ -402,6 +403,10 @@ function SidebarControl() {
 
 export function AppSidebarLayout({ children }: { children: ReactNode }) {
   const sidebarArea = workspaceAreaProps("sidebar", 0, "Threads");
+  const [sidebarRouteReveal] = useState<SidebarRouteReveal>(() => ({
+    observedKey: null,
+    pendingKey: null,
+  }));
   const { active: panelAnimationsActive, durationMs: panelAnimationDurationMs } =
     usePanelAnimationSettings();
   const pathname = useLocation({ select: (location) => location.pathname });
@@ -464,12 +469,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
           }}
           style={windowControlsInsetStyle}
         >
-          {/* Tasks replace the thread list; dragged wide enough, the sidebar becomes the board. */}
-          <TaskSidebar
-            width={clampThreadSidebarWidth(sidebarWidth, sidebarMinimumWidth, sidebarMaximumWidth)}
-            maxWidth={sidebarMaximumWidth}
-            onWidthChange={setSidebarWidth}
-          />
+          <ThreadSidebar routeReveal={sidebarRouteReveal} />
           <SidebarRail onDoubleClick={resetSidebarWidth} />
         </Sidebar>
         {children}

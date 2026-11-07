@@ -230,6 +230,7 @@ import {
 } from "./Sidebar.snooze";
 import { ProjectFavicon } from "./ProjectFavicon";
 import { deriveProviderEntriesByEnvironment } from "../providerInstances";
+import { ProposalsSection } from "./router/ProposalsSection";
 import { useStableCallback } from "../hooks/useStableCallback";
 import {
   resolveSidebarRouteReveal,
@@ -3206,6 +3207,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           </SidebarGroup>
         }
       >
+        {/* super-t3: the router's proposals, above the threads. */}
+        <ProposalsSection />
         <SidebarGroup className="flex-1" role="presentation">
           {isSearchingThreads ? (
             threadSearchResults.length > 0 ? (

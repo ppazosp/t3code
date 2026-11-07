@@ -17,6 +17,8 @@ export { ChannelError } from "./Channel.ts";
 export interface ChannelsShape {
   /** Posts the router's reply where a channel message came from, named by the `ref` it carried. */
   readonly reply: (ref: string, text: string) => Effect.Effect<void, ChannelError>;
+  /** Posts super-t3's own note in a conversation, such as a proposal it made from the user's message. */
+  readonly announce: (ref: string, text: string) => Effect.Effect<void, ChannelError>;
 }
 
 /**
@@ -67,12 +69,17 @@ export const layer: Layer.Layer<
         ),
       );
     }
+    const adapterFor = (ref: string) =>
+      Effect.fromNullishOr(adapters.find((candidate) => ref.startsWith(candidate.prefix))).pipe(
+        Effect.mapError(() => new ChannelError({ message: "No channel is connected to this T3." })),
+      );
     return Channels.of({
+      announce: Effect.fn("Channels.announce")(function* (ref, text) {
+        const adapter = yield* adapterFor(ref);
+        yield* adapter.post(ref, text);
+      }),
       reply: Effect.fn("Channels.reply")(function* (ref, text) {
-        const adapter = adapters.find((candidate) => ref.startsWith(candidate.prefix));
-        if (adapter === undefined) {
-          return yield* new ChannelError({ message: "No channel is connected to this T3." });
-        }
+        const adapter = yield* adapterFor(ref);
         if (!userRefs.has(ref)) {
           return yield* new ChannelError({
             message: `You can reply only to a message the user sent you; ${ref} is not one.`,

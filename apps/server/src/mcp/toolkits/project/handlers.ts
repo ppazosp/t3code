@@ -30,8 +30,6 @@ import { resolveRuntimeMode } from "../../delegatedTaskModes.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import { newCommandId, readCaller, resolveProjectId, unavailable } from "../../threadAccess.ts";
-import * as RouterProposals from "../../../router/RouterProposals.ts";
-import { isRouterThread } from "../../../router/RouterRuntimePolicy.ts";
 import { ProjectToolkit } from "./tools.ts";
 
 const isAboveCeilingError = Schema.is(OrchestratorRuntimeModeAboveCeilingError);
@@ -225,10 +223,6 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
             )?.supportedRuntimeModes,
           });
         }
-        // What the router launches is a proposal from its first turn: the id counts as one before
-        // the thread exists, until its tag is stored.
-        const routerLaunch = caller !== undefined && isRouterThread(caller);
-        if (routerLaunch) RouterProposals.beginRouterLaunch(threadId);
         const result = yield* ThreadMessageIntake.launchThread({
           commandId,
           threadId,
@@ -278,12 +272,6 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
           }),
         );
         const thread = result.projection.thread;
-        if (routerLaunch && caller !== undefined) {
-          yield* RouterProposals.markRouterLaunch({
-            routerId: caller.id,
-            threadId: thread.id,
-          }).pipe(Effect.mapError(unavailable));
-        }
         const run = result.projection.runs.find((run) => run.userMessageId === messageId);
         return {
           threadId: thread.id,
