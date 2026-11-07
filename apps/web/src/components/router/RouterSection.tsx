@@ -14,11 +14,13 @@ import {
   type ThreadTag,
 } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
-import { RouteIcon } from "lucide-react";
+import { ChevronRightIcon, RouteIcon } from "lucide-react";
+import * as Schema from "effect/Schema";
 import { useEffect } from "react";
 
 import { DraftId, useComposerDraftStore } from "../../composerDraftStore";
-import { useNewThreadHandler } from "../../hooks/useHandleNewThread";
+import { cn, newDraftId, newThreadId } from "~/lib/utils";
+import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { useThreadRouteTarget } from "../../hooks/useThreadRouteTarget";
 import { useThreadShells } from "../../state/entities";
 import { useEnvironment, usePrimaryEnvironmentId } from "../../state/environments";
@@ -72,6 +74,11 @@ export function RouterSection() {
   const actions = useProposalActions();
   const openProposal = useOpenProposal();
   const setTag = useOrchestrationCommand(threadEnvironment.setTag);
+  const [proposalsOpen, setProposalsOpen] = useLocalStorage(
+    "super-t3:proposals-open",
+    true,
+    Schema.Boolean,
+  );
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- tells the server which proposal a sent draft accepted, once its thread exists
   useEffect(() => {
@@ -113,27 +120,40 @@ export function RouterSection() {
           </SidebarMenuButton>
         </SidebarMenuItem>
       </SidebarMenu>
-      <h2 className="flex h-7 items-center gap-1.5 px-2.5 text-xs font-medium text-sidebar-muted-foreground">
+      <button
+        type="button"
+        aria-expanded={proposalsOpen}
+        onClick={() => setProposalsOpen(!proposalsOpen)}
+        className="flex h-7 w-full items-center gap-1.5 rounded-md px-2.5 text-xs font-medium text-sidebar-muted-foreground outline-hidden hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      >
+        <ChevronRightIcon
+          aria-hidden
+          className={cn("size-3 transition-transform", proposalsOpen && "rotate-90")}
+        />
         Proposals
         <span className="tabular-nums opacity-60">{proposals.length}</span>
-      </h2>
-      {proposals.length === 0 ? (
-        <p className="px-2.5 pb-1 text-xs text-sidebar-muted-foreground/70">
-          Nothing proposed. The router adds work here for you to accept.
-        </p>
+      </button>
+      {proposalsOpen ? (
+        <>
+          {proposals.length === 0 ? (
+            <p className="px-2.5 pb-1 text-xs text-sidebar-muted-foreground/70">
+              Nothing proposed. The router adds work here for you to accept.
+            </p>
+          ) : null}
+          <SidebarMenu>
+            {proposals.map((task) => (
+              <ProposalRow
+                key={task.id}
+                environmentId={environmentId}
+                task={task}
+                active={activeDraftId !== null && proposalDraftFor(task.id) === activeDraftId}
+                onOpen={() => void openProposal(environmentId, task)}
+                onDiscard={() => void actions.discard(environmentId, task)}
+              />
+            ))}
+          </SidebarMenu>
+        </>
       ) : null}
-      <SidebarMenu>
-        {proposals.map((task) => (
-          <ProposalRow
-            key={task.id}
-            environmentId={environmentId}
-            task={task}
-            active={activeDraftId !== null && proposalDraftFor(task.id) === activeDraftId}
-            onOpen={() => void openProposal(environmentId, task)}
-            onDiscard={() => void actions.discard(environmentId, task)}
-          />
-        ))}
-      </SidebarMenu>
     </SidebarGroup>
   );
 }
@@ -145,7 +165,6 @@ export function RouterSection() {
  */
 function useOpenProposal() {
   const navigate = useNavigate();
-  const handleNewThread = useNewThreadHandler();
   return async (environmentId: EnvironmentId, task: ScheduledTask) => {
     const store = useComposerDraftStore.getState();
     const existing = proposalDraftFor(task.id);
@@ -154,31 +173,30 @@ function useOpenProposal() {
       await navigate({ to: "/draft/$draftId", params: { draftId: existing } });
       return;
     }
+    const draftId = newDraftId();
+    const threadId = newThreadId();
+    // Linked before the draft exists, so the sidebar never lists it as an ordinary draft.
+    rememberProposalDraft(draftId, { environmentId, taskId: task.id, threadId });
     const workspace = task.workspaceStrategy;
-    const opened = await handleNewThread(scopeProjectRef(environmentId, task.projectId), {
+    store.setProjectDraftThreadId(scopeProjectRef(environmentId, task.projectId), draftId, {
+      threadId,
+      createdAt: new Date().toISOString(),
+      runtimeMode: task.runtimeMode,
+      interactionMode: task.interactionMode,
       ...(workspace.type === "worktree"
         ? {
             envMode: "worktree" as const,
             branch: workspace.baseRef,
+            worktreePath: null,
             startFromOrigin: workspace.startFromOrigin ?? false,
           }
         : workspace.type === "existing_worktree"
-          ? { envMode: "worktree" as const, worktreePath: workspace.worktreePath }
+          ? { envMode: "worktree" as const, branch: null, worktreePath: workspace.worktreePath }
           : { envMode: "local" as const, branch: null, worktreePath: null }),
-      prompt: readProposalSource(task.prompt).brief,
     });
-    if (opened === null) return;
-    store.setModelSelection(opened.draftId, task.modelSelection, {
-      explicit: true,
-      replaceOptions: true,
-    });
-    store.setInteractionMode(opened.draftId, task.interactionMode);
-    store.setRuntimeMode(opened.draftId, task.runtimeMode);
-    rememberProposalDraft(opened.draftId, {
-      environmentId,
-      taskId: task.id,
-      threadId: opened.threadId,
-    });
+    store.setPrompt(draftId, readProposalSource(task.prompt).brief);
+    store.setModelSelection(draftId, task.modelSelection, { explicit: true, replaceOptions: true });
+    await navigate({ to: "/draft/$draftId", params: { draftId } });
   };
 }
 

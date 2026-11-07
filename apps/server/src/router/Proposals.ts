@@ -58,7 +58,7 @@ export function sourceOf(text: string, at: string): ProposalSource | null {
   return {
     kind: "slack",
     where: match[1] === "dm" ? "DM" : match[1]!,
-    author: match[2] === "you" ? "You" : match[2]!,
+    author: match[2] === "you" ? "You" : match[2]!.replace(/^@/u, ""),
     // Long messages are cut; the card shows the gist, and the brief carries the work.
     text: quoted.length <= 600 ? quoted : `${quoted.slice(0, 600)}…`,
     at,

@@ -37,8 +37,15 @@ const UserInfo = Schema.Struct({
   }),
 });
 
-/** A name safe inside the router's message header, which brackets and newlines would break. */
-const headerSafe = (name: string) => name.replaceAll(/[\]\[\n\r]/gu, " ").trim();
+/**
+ * A name safe inside the router's message header. Brackets and newlines would break it, and the
+ * header's own words (" from ", " ref=") must not appear in a name anyone can choose.
+ */
+const headerSafe = (name: string) =>
+  name
+    .replaceAll(/[\]\[\n\r]/gu, " ")
+    .replaceAll(/\s(from|ref=)\s?/giu, " ")
+    .trim();
 
 /** Slack allows about one edit of a message a second. */
 const EDIT_SPACING_MS = 1_000;
@@ -139,17 +146,20 @@ export const make = Effect.fn("SlackAdapter.make")(function* (settings: SlackSet
     const author =
       user === null
         ? message.author
-        : yield* lookup(
+        : // Always "@name": the header reads "from you" for the user, and a display name of "you"
+          // must never pass for that.
+          yield* lookup(
             `user:${user}`,
             `@${user}`,
             call(`users.info?user=${encodeURIComponent(user)}`, undefined, UserInfo).pipe(
-              Effect.map(
-                (info) =>
+              Effect.map((info) => {
+                const name =
                   info.user.profile?.display_name ||
                   info.user.profile?.real_name ||
                   info.user.real_name ||
-                  info.user.name,
-              ),
+                  info.user.name;
+                return name === undefined || name.trim() === "" ? undefined : `@${name}`;
+              }),
             ),
           );
     return { ...message, where, author };
