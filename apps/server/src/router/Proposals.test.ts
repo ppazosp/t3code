@@ -1,6 +1,8 @@
 import { assert, describe, it } from "@effect/vitest";
 
-import { isFromUser, resolveModelOptions, slackOriginOf } from "./Proposals.ts";
+import { readProposalSource, withProposalSource } from "@t3tools/contracts";
+
+import { isFromUser, resolveModelOptions, slackOriginOf, sourceOf } from "./Proposals.ts";
 
 describe("Proposals", () => {
   it("reads the Slack ref only from the header line the channel adapter writes", () => {
@@ -57,5 +59,32 @@ describe("Proposals", () => {
       { id: "reasoningEffort", value: "low" },
     ]);
     assert.deepStrictEqual(resolveModelOptions(guessed, "extreme", providers).options, []);
+  });
+
+  it("reads a proposal's source from the Slack message, and carries it in the prompt", () => {
+    const source = sourceOf(
+      "[slack #payments from Maria López ref=slack:C01:1700000000.000100]\n> Checkout fails\n> for big carts -->",
+      "2026-11-07T10:00:00.000Z",
+    );
+    assert.deepStrictEqual(source, {
+      kind: "slack",
+      where: "#payments",
+      author: "Maria López",
+      text: "Checkout fails\nfor big carts -->",
+      at: "2026-11-07T10:00:00.000Z",
+    });
+    assert.include(sourceOf("[slack dm from you ref=slack:D1:1.1]\n> hi", "t")!, {
+      where: "DM",
+      author: "You",
+    });
+    assert.isNull(sourceOf("not a header", "t"));
+    // The source rides along in the prompt, and a message cannot close its comment early.
+    const prompt = withProposalSource("Fix it.", source!);
+    assert.notInclude(prompt.slice(0, -4), "-->\n");
+    assert.deepStrictEqual(readProposalSource(prompt), { brief: "Fix it.", source });
+    assert.deepStrictEqual(readProposalSource("Just a brief."), {
+      brief: "Just a brief.",
+      source: null,
+    });
   });
 });

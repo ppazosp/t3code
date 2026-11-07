@@ -21,6 +21,24 @@ const SlackOk = Schema.Struct({ ok: Schema.Boolean, error: Schema.optional(Schem
 const ConnectionsOpen = Schema.Struct({ url: Schema.String });
 const AuthTest = Schema.Struct({ user_id: Schema.String });
 const Posted = Schema.Struct({ channel: Schema.String, ts: Schema.String });
+const ConversationInfo = Schema.Struct({
+  channel: Schema.Struct({ name: Schema.optional(Schema.String) }),
+});
+const UserInfo = Schema.Struct({
+  user: Schema.Struct({
+    name: Schema.optional(Schema.String),
+    real_name: Schema.optional(Schema.String),
+    profile: Schema.optional(
+      Schema.Struct({
+        display_name: Schema.optional(Schema.String),
+        real_name: Schema.optional(Schema.String),
+      }),
+    ),
+  }),
+});
+
+/** A name safe inside the router's message header, which brackets and newlines would break. */
+const headerSafe = (name: string) => name.replaceAll(/[\]\[\n\r]/gu, " ").trim();
 
 /** Slack allows about one edit of a message a second. */
 const EDIT_SPACING_MS = 1_000;
@@ -87,6 +105,56 @@ export const make = Effect.fn("SlackAdapter.make")(function* (settings: SlackSet
   const inbox = yield* Queue.unbounded<ChannelMessage>();
   const seen = new Set<string>();
 
+  // Channel and people names, looked up once each; without the scopes for it, the ids stay.
+  const names = new Map<string, string>();
+  const lookup = (
+    key: string,
+    fallback: string,
+    find: Effect.Effect<string | undefined, ChannelError>,
+  ) =>
+    names.has(key)
+      ? Effect.succeed(names.get(key)!)
+      : find.pipe(
+          Effect.map((name) =>
+            name === undefined || name.trim() === "" ? fallback : headerSafe(name),
+          ),
+          Effect.orElseSucceed(() => fallback),
+          Effect.tap((name) => Effect.sync(() => names.set(key, name))),
+        );
+  const withNames = Effect.fn("SlackAdapter.withNames")(function* (message: ChannelMessage) {
+    const channel = message.where.startsWith("#") ? message.where.slice(1) : null;
+    const user = message.author.startsWith("@") ? message.author.slice(1) : null;
+    const where =
+      channel === null
+        ? message.where
+        : `#${yield* lookup(
+            `channel:${channel}`,
+            channel,
+            call(
+              `conversations.info?channel=${encodeURIComponent(channel)}`,
+              undefined,
+              ConversationInfo,
+            ).pipe(Effect.map((info) => info.channel.name)),
+          )}`;
+    const author =
+      user === null
+        ? message.author
+        : yield* lookup(
+            `user:${user}`,
+            `@${user}`,
+            call(`users.info?user=${encodeURIComponent(user)}`, undefined, UserInfo).pipe(
+              Effect.map(
+                (info) =>
+                  info.user.profile?.display_name ||
+                  info.user.profile?.real_name ||
+                  info.user.real_name ||
+                  info.user.name,
+              ),
+            ),
+          );
+    return { ...message, where, author };
+  });
+
   const connectOnce = (botUserId: string) =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -121,7 +189,7 @@ export const make = Effect.fn("SlackAdapter.make")(function* (settings: SlackSet
           // A mention arrives twice, as `message` and `app_mention`, with one id.
           if (Option.isNone(message) || seen.has(message.value.id)) continue;
           rememberBounded(seen, message.value.id);
-          yield* Queue.offer(inbox, message.value);
+          yield* Queue.offer(inbox, yield* withNames(message.value));
         }
       }),
     );

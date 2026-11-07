@@ -230,6 +230,7 @@ import {
 import { ProjectFavicon } from "./ProjectFavicon";
 import { deriveProviderEntriesByEnvironment } from "../providerInstances";
 import { RouterSection } from "./router/RouterSection";
+import { isProposalDraft } from "./router/proposalDrafts";
 import { useListedThreadShells } from "./router/useListedThreadShells";
 import { useStableCallback } from "../hooks/useStableCallback";
 import {
@@ -1211,7 +1212,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const visibleDraftSessionCount = useComposerDraftStore((store) => {
     let count = 0;
     for (const [draftKey, session] of Object.entries(store.draftThreadsByThreadKey)) {
-      if (session.promotedTo != null) {
+      // super-t3: a proposal's draft is listed under Proposals instead.
+      if (session.promotedTo != null || isProposalDraft(draftKey)) {
         continue;
       }
       if (!composerDraftHasUserContent(store.draftsByThreadKey[draftKey])) {

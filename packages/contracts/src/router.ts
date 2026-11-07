@@ -27,6 +27,56 @@ Keep every reply short. When you propose something, say so in one line. For a ch
  */
 export const PROPOSAL_RUN_AT = "9999-12-31T00:00:00.000Z";
 
+/**
+ * Set by the client on the thread a proposal's draft became, as `accepted:<proposal id>`. The server
+ * then gives the worker the proposal's origin and title, removes the proposal, and drops the tag.
+ */
+export const ACCEPTED_TAG_PREFIX = "accepted:";
+
+/** Where a proposal came from, as its card shows it: the channel, the author and their message. */
+export interface ProposalSource {
+  readonly kind: "slack";
+  readonly where: string;
+  readonly author: string;
+  readonly text: string;
+  readonly at: string;
+}
+
+const SOURCE_MARKER = /\n*<!-- super-t3:source (\{.*\}) -->\s*$/su;
+
+/**
+ * Appends where a proposal came from to its prompt, in a comment the app reads and strips, so
+ * the source travels with the proposal and never reaches the worker. Angle brackets are escaped,
+ * so a message cannot close the comment.
+ */
+export function withProposalSource(brief: string, source: ProposalSource): string {
+  const json = JSON.stringify(source).replaceAll("<", "\\u003c").replaceAll(">", "\\u003e");
+  return `${brief}\n\n<!-- super-t3:source ${json} -->`;
+}
+
+/** A proposal prompt's brief, and its source when it has one. */
+export function readProposalSource(prompt: string): {
+  readonly brief: string;
+  readonly source: ProposalSource | null;
+} {
+  const match = SOURCE_MARKER.exec(prompt);
+  if (match === null) return { brief: prompt, source: null };
+  try {
+    const parsed = JSON.parse(match[1]!) as Partial<ProposalSource>;
+    const source =
+      parsed.kind === "slack" &&
+      typeof parsed.where === "string" &&
+      typeof parsed.author === "string" &&
+      typeof parsed.text === "string" &&
+      typeof parsed.at === "string"
+        ? (parsed as ProposalSource)
+        : null;
+    return { brief: prompt.slice(0, match.index).trimEnd(), source };
+  } catch {
+    return { brief: prompt.slice(0, match.index).trimEnd(), source: null };
+  }
+}
+
 export function isProposalTask(task: {
   readonly enabled: boolean;
   readonly schedule: { readonly type: string; readonly runAt?: string };

@@ -27,6 +27,7 @@ import { useThreadLifecycle } from "./chat/useThreadLifecycle";
 import { useRightPanelActions } from "./chat/useRightPanelActions";
 import { type TerminalLaunchContext, useChatTerminalActions } from "./chat/useChatTerminalActions";
 import { useComposerSend } from "./chat/useComposerSend";
+import { ProposalComposerTab } from "./router/ProposalComposerTab";
 import { useComposerResume } from "./chat/useComposerResume";
 import { useImplementPlanInNewThread } from "./chat/useProposedPlanSend";
 import { ThreadFind, ThreadFindCanvas } from "./chat/ThreadFindProvider";
@@ -3525,10 +3526,16 @@ export default function ChatView(props: ChatViewProps) {
                             : undefined
                         }
                       >
-                        <DraftHeroHeadline
+                        {/* super-t3: a proposal's draft shows the proposal instead of the headline. */}
+                        <ProposalComposerTab
                           draftId={draftId}
-                          activeProjectRef={activeProjectRef}
-                          activeProjectTitle={activeProject?.title ?? null}
+                          fallback={
+                            <DraftHeroHeadline
+                              draftId={draftId}
+                              activeProjectRef={activeProjectRef}
+                              activeProjectTitle={activeProject?.title ?? null}
+                            />
+                          }
                         />
                       </div>
                     </div>
