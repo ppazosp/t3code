@@ -6,6 +6,7 @@ import * as Layer from "effect/Layer";
 
 import { RuntimePolicyV2 } from "../orchestration-v2/RuntimePolicy.ts";
 import { layer } from "./RouterRuntimePolicy.ts";
+import * as SuperT3Home from "./SuperT3Home.ts";
 
 describe("RouterRuntimePolicy.layer", () => {
   const base = Layer.succeed(RuntimePolicyV2, {
@@ -25,7 +26,14 @@ describe("RouterRuntimePolicy.layer", () => {
         thread: { id: "thread:a", tags } as never,
         modelSelection: { instanceId: "codex", model: "m" } as never,
       });
-    }).pipe(Effect.provide(layer.pipe(Layer.provide(base))));
+    }).pipe(
+      Effect.provide(
+        layer.pipe(
+          Layer.provide(base),
+          Layer.provide(SuperT3Home.layerOf({ routerInstructions: "# You are the router" })),
+        ),
+      ),
+    );
 
   it.effect("runs the router read-only, with only its own T3 tools", () =>
     Effect.gen(function* () {
@@ -34,8 +42,9 @@ describe("RouterRuntimePolicy.layer", () => {
       assert.strictEqual(policy.approvalPolicy, "never");
       assert.include(policy.t3ToolAllowlist ?? [], "propose_task");
       assert.notInclude(policy.t3ToolAllowlist ?? [], "t3_thread_launch");
-      // Its standing instructions are its system prompt, on every turn.
-      assert.include(policy.instructions, "You are the router.");
+      // router.md is its system prompt, and it works in an empty folder of its own.
+      assert.strictEqual(policy.instructions, "# You are the router");
+      assert.strictEqual(policy.cwd, "/super-t3/router");
     }),
   );
 

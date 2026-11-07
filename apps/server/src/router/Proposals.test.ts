@@ -3,6 +3,7 @@ import { assert, describe, it } from "@effect/vitest";
 import { readChannelHeader, readProposalSource, withProposalSource } from "@t3tools/contracts";
 
 import { resolveModelOptions, sourceOf, workerModelSelection } from "./Proposals.ts";
+import { DEFAULT_CONFIG } from "./SuperT3Home.ts";
 
 describe("Proposals", () => {
   it("reads where a message came from only from the header line the bridge writes", () => {
@@ -66,36 +67,33 @@ describe("Proposals", () => {
     assert.deepStrictEqual(resolveModelOptions(guessed, "extreme", providers).options, []);
   });
 
-  it("runs a worker on its agent's default model and effort, on that provider's instance", () => {
-    const effortControl = {
-      type: "select",
-      id: "reasoningEffort",
-      label: "Effort",
-      options: ["low", "medium", "high", "xhigh"].map((id) => ({ id, label: id })),
-    };
+  it("runs a worker on its agent's model and effort from the config", () => {
     const providers = [
       {
         instanceId: "codex",
         driver: "codex",
-        models: [{ slug: "gpt-6.1-sol", capabilities: { optionDescriptors: [effortControl] } }],
-      },
-      {
-        instanceId: "claude-work",
-        driver: "claudeAgent",
-        models: [{ slug: "claude-opus-5-5", capabilities: { optionDescriptors: [effortControl] } }],
+        models: [
+          {
+            slug: "gpt-6.1-sol",
+            capabilities: {
+              optionDescriptors: [
+                {
+                  type: "select",
+                  id: "reasoningEffort",
+                  label: "Effort",
+                  options: ["high", "xhigh"].map((id) => ({ id, label: id })),
+                },
+              ],
+            },
+          },
+        ],
       },
     ] as never;
-    assert.deepStrictEqual(workerModelSelection("codex", undefined, providers), {
+    assert.deepStrictEqual(workerModelSelection(DEFAULT_CONFIG.workers.codex, providers), {
       instanceId: "codex",
       model: "gpt-6.1-sol",
       options: [{ id: "reasoningEffort", value: "xhigh" }],
     } as never);
-    assert.deepStrictEqual(workerModelSelection("claude", "low", providers), {
-      instanceId: "claude-work",
-      model: "claude-opus-5-5",
-      options: [{ id: "reasoningEffort", value: "low" }],
-    } as never);
-    assert.isNull(workerModelSelection("claude", undefined, [providers[0]] as never));
   });
 
   it("reads a proposal's source from the Slack message, and carries it in the prompt", () => {

@@ -33,7 +33,6 @@ const handlers = {
           projectId: input.projectId,
           workspaceStrategy: input.workspaceStrategy,
           agent: input.agent,
-          effort: input.effort,
           plan: input.plan ?? false,
         })
         .pipe(Effect.mapError((error) => failure(error.message)));

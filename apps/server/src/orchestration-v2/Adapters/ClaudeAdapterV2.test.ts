@@ -454,6 +454,7 @@ describe("ClaudeAdapterV2 runtime query policy", () => {
     });
     assert.deepEqual(options.tools, []);
     assert.isTrue(options.strictMcpConfig);
+    assert.deepEqual(options.settingSources, []);
   });
 
   it("does not auto-allow reads for canonical restricted read-only never policy", () => {

@@ -42,7 +42,6 @@ export function RouterSetup({ projects }: { projects: ReadonlyArray<EnvironmentP
   const pin = useOrchestrationCommand(threadEnvironment.pin);
   const startTurn = useOrchestrationCommand(threadEnvironment.startTurn);
   const [projectKey, setProjectKey] = useState<string | null>(null);
-  const [modelValue, setModelValue] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
 
   const projectKeyOf = (project: EnvironmentProject) => `${project.environmentId}:${project.id}`;
@@ -65,7 +64,8 @@ export function RouterSetup({ projects }: { projects: ReadonlyArray<EnvironmentP
         Number(right.isCodex) - Number(left.isCodex) ||
         Number(right.isDefault) - Number(left.isDefault),
     );
-  const model = modelOptions.find((option) => option.value === modelValue) ?? modelOptions[0];
+  // The server moves the router to the model in super-t3's config.json once it is tagged.
+  const model = modelOptions[0];
 
   const start = async () => {
     if (project === undefined || model === undefined || starting) return;
@@ -137,8 +137,9 @@ export function RouterSetup({ projects }: { projects: ReadonlyArray<EnvironmentP
       </div>
       <p className="text-xs text-muted-foreground">
         The router is one conversation for all your work. It turns requests and channel messages
-        into tasks, proposes work for you to approve, and follows each task. It reads and delegates,
-        but never edits files itself.
+        into tasks, proposes work for you to approve, and follows each task. It sees only T3, in a
+        folder of its own, and runs on the model in super-t3's config.json; the project only lists
+        its thread.
       </p>
       <div className="flex flex-wrap items-center gap-2">
         <Menu>
@@ -161,27 +162,6 @@ export function RouterSetup({ projects }: { projects: ReadonlyArray<EnvironmentP
                     <ProjectFavicon project={candidate} className="size-3.5" />
                     {candidate.title}
                   </span>
-                </MenuRadioItem>
-              ))}
-            </MenuRadioGroup>
-          </MenuPopup>
-        </Menu>
-        <Menu>
-          <MenuTrigger
-            render={<Button variant="outline" size="sm" />}
-            disabled={modelOptions.length === 0}
-          >
-            <span className="truncate">{model?.label ?? "No models"}</span>
-            <ChevronDownIcon aria-hidden className="size-3 text-muted-foreground/70" />
-          </MenuTrigger>
-          <MenuPopup align="start" side="bottom" className="max-h-80">
-            <MenuRadioGroup
-              value={model?.value ?? ""}
-              onValueChange={(next) => setModelValue(next as string)}
-            >
-              {modelOptions.map((option) => (
-                <MenuRadioItem key={option.value} value={option.value}>
-                  {option.label}
                 </MenuRadioItem>
               ))}
             </MenuRadioGroup>

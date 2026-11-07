@@ -3,6 +3,7 @@ import {
   channelSourceLabels,
   CommandId,
   FROM_USER_TAG,
+  WORKER_TAG,
   isProposalTask,
   PROPOSAL_RUN_AT,
   readChannelHeader,
@@ -12,6 +13,7 @@ import {
   type OrchestrationV2ThreadLaunchWorkspaceStrategy,
   type ProjectId,
   type ProposalSource,
+  ProviderInstanceId,
   type ScheduledTask,
   type ScheduledTaskId,
   type ServerProvider,
@@ -31,6 +33,7 @@ import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import { ProviderRegistry } from "../provider/ProviderRegistry.ts";
 import { ScheduledTaskService } from "../scheduledTasks/ScheduledTaskService.ts";
+import { type ModelChoice, SuperT3Home } from "./SuperT3Home.ts";
 
 export class ProposalError extends Schema.TaggedError<ProposalError>()("ProposalError", {
   message: Schema.String,
@@ -95,27 +98,19 @@ export function resolveModelOptions(
   return { instanceId: selection.instanceId, model: selection.model, options: resolved };
 }
 
-/** Who a worker can be, with the model and effort it runs on unless the router asks for another. */
-const WORKER_AGENTS = {
-  codex: { driver: "codex", model: "gpt-6.1-sol", effort: "xhigh" },
-  claude: { driver: "claudeAgent", model: "claude-opus-5-5", effort: "high" },
-} as const;
-export type WorkerAgent = keyof typeof WORKER_AGENTS;
+export type WorkerAgent = "codex" | "claude";
 
-/** A worker's model: its agent's default, on that provider's instance in this T3, if it has one. */
+/**
+ * A worker's model: its agent's, from super-t3's config, with the effort matched to the model's own
+ * control. The router picks only the agent; the user can change the rest on the proposal.
+ */
 export function workerModelSelection(
-  agent: WorkerAgent,
-  effort: string | undefined,
+  choice: ModelChoice,
   providers: ReadonlyArray<ServerProvider>,
-): ModelSelection | null {
-  const defaults = WORKER_AGENTS[agent];
-  const instance =
-    providers.find((provider) => provider.instanceId === defaults.driver) ??
-    providers.find((provider) => provider.driver === defaults.driver);
-  if (instance === undefined) return null;
+): ModelSelection {
   return resolveModelOptions(
-    { instanceId: instance.instanceId, model: defaults.model, options: [] },
-    effort ?? defaults.effort,
+    { instanceId: ProviderInstanceId.make(choice.instanceId), model: choice.model, options: [] },
+    choice.effort,
     providers,
   );
 }
@@ -126,10 +121,8 @@ export interface ProposeInput {
   readonly brief: string;
   readonly projectId: ProjectId;
   readonly workspaceStrategy: OrchestrationV2ThreadLaunchWorkspaceStrategy;
-  /** Who does the work, on its default model. */
+  /** Who does the work, on the model super-t3's config sets for it. */
   readonly agent: WorkerAgent;
-  /** A reasoning level such as "low" or "high" in place of the agent's default. */
-  readonly effort: string | undefined;
   readonly plan: boolean;
 }
 
@@ -160,6 +153,7 @@ export const layer = Layer.effect(
     const engine = yield* Orchestrator.OrchestratorV2;
     const channels = yield* Channels.Channels;
     const providerRegistry = yield* ProviderRegistry;
+    const home = yield* SuperT3Home;
     const failed = (message: string) => () => new ProposalError({ message });
 
     // super-t3's own table; upstream migrations never see it.
@@ -191,7 +185,9 @@ export const layer = Layer.effect(
       function* (task: ScheduledTask, threadId: ThreadId, marker: string) {
         const row = yield* originOf(task.id);
         const tags =
-          row === null ? [] : [row.origin, ...(row.from_user === 1 ? [FROM_USER_TAG] : [])];
+          row === null
+            ? [WORKER_TAG]
+            : [WORKER_TAG, row.origin, ...(row.from_user === 1 ? [FROM_USER_TAG] : [])];
         // The title first: the worker posts in its conversation as soon as it is tagged.
         yield* threads.dispatch({
           type: "thread.metadata.update",
@@ -266,16 +262,14 @@ export const layer = Layer.effect(
           header === null || trigger === undefined
             ? null
             : sourceOf(trigger.text, DateTime.formatIso(trigger.createdAt));
-        const modelSelection = workerModelSelection(
-          input.agent,
-          input.effort,
-          yield* providerRegistry.getProviders,
-        );
-        if (modelSelection === null) {
+        const choice = (yield* home.config).workers[input.agent];
+        const providers = yield* providerRegistry.getProviders;
+        if (!providers.some((provider) => provider.instanceId === choice.instanceId)) {
           return yield* new ProposalError({
-            message: `${input.agent === "codex" ? "Codex" : "Claude"} is not set up in this T3; propose the other agent.`,
+            message: `${input.agent === "codex" ? "Codex" : "Claude"} (${choice.instanceId}) is not set up in this T3; propose the other agent.`,
           });
         }
+        const modelSelection = workerModelSelection(choice, providers);
         const { task } = yield* scheduled
           .upsert({
             title: input.title,

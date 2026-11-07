@@ -73,6 +73,8 @@ import * as TerminalManager from "./terminal/Manager.ts";
 import * as McpHttpServer from "./mcp/McpHttpServer.ts";
 import * as Channels from "./channels/Channels.ts";
 import * as Proposals from "./router/Proposals.ts";
+import * as RouterModel from "./router/RouterModel.ts";
+import * as SuperT3Home from "./router/SuperT3Home.ts";
 import * as PeerForwarding from "./peer/PeerForwarding.ts";
 import * as RemoteDelegation from "./peer/RemoteDelegation.ts";
 import * as PeerLinkRequests from "./peer/PeerLinkRequests.ts";
@@ -786,6 +788,8 @@ const layerMakeRoutes = Layer.mergeAll(
   Layer.effectDiscard(Channels.Channels),
   // The router's proposals, which follow accepted ones into their workers.
   Layer.effectDiscard(Proposals.Proposals),
+  // The router's model, as super-t3's config.json names it.
+  RouterModel.layer,
   // Follows delegated tasks running in linked environments, including after a restart.
   Layer.effectDiscard(
     RemoteDelegation.RemoteDelegation.pipe(Effect.flatMap((remote) => remote.start())),
@@ -795,6 +799,7 @@ const layerMakeRoutes = Layer.mergeAll(
     PullRequestReviewGuideService.layer.pipe(Layer.provide(PullRequestReviewGuides.layer)),
   ),
   Layer.provide(Proposals.layer),
+  Layer.provide(SuperT3Home.layer),
   Layer.provide(Channels.layer),
   // delegate_task to a linked environment, from /mcp and the follower above.
   Layer.provide(RemoteDelegation.layer.pipe(Layer.provide(ProjectionStoreV2.layer))),

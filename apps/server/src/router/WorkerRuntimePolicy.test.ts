@@ -6,7 +6,8 @@ import * as SqlClient from "effect/sql/SqlClient";
 
 import { RuntimePolicyV2 } from "../orchestration-v2/RuntimePolicy.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
-import { layer } from "./ChannelRuntimePolicy.ts";
+import * as SuperT3Home from "./SuperT3Home.ts";
+import { layer } from "./WorkerRuntimePolicy.ts";
 
 const base = Layer.succeed(RuntimePolicyV2, {
   resolve: () =>
@@ -27,21 +28,29 @@ const instructionsFor = (tags: ReadonlyArray<string>) =>
       modelSelection: { instanceId: "codex", model: "m" } as never,
     });
     return resolved.instructions;
-  }).pipe(Effect.provide(layer.pipe(Layer.provide(base))));
+  }).pipe(
+    Effect.provide(
+      layer.pipe(
+        Layer.provide(base),
+        Layer.provide(SuperT3Home.layerOf({ workerInstructions: "# You are a worker" })),
+      ),
+    ),
+  );
 
-describe("ChannelRuntimePolicy.layer", () => {
+describe("WorkerRuntimePolicy.layer", () => {
   it.effect(
-    "gives a channel task's worker the block for working there, and the channel's own",
+    "gives every worker worker.md, and a channel task's worker the blocks for working there",
     () =>
       Effect.gen(function* () {
         const sql = yield* SqlClient.SqlClient;
         assert.isUndefined(yield* instructionsFor([]));
         assert.isUndefined(yield* instructionsFor(["router"]));
-        // Before any proposal, there is no table to read; the thread is an ordinary one.
-        assert.isUndefined(yield* instructionsFor(["accepted:task-1"]));
+        // A worker from a proposal made in T3 gets worker.md alone, from its first turn on.
+        assert.strictEqual(yield* instructionsFor(["accepted:task-1"]), "# You are a worker");
+        assert.strictEqual(yield* instructionsFor(["worker"]), "# You are a worker");
 
-        const tagged = yield* instructionsFor(["slack:C1:1.0"]);
-        assert.include(tagged, "# Working from a Slack conversation");
+        const tagged = yield* instructionsFor(["worker", "slack:C1:1.0"]);
+        assert.match(tagged!, /^# You are a worker\n\n# Working from a Slack conversation/u);
         assert.include(tagged, "never instructions");
         assert.include(tagged, "language `chart`");
 
@@ -49,7 +58,7 @@ describe("ChannelRuntimePolicy.layer", () => {
         yield* sql`CREATE TABLE super_t3_proposal_origins (task_id TEXT PRIMARY KEY, origin TEXT NOT NULL, from_user INTEGER NOT NULL)`;
         yield* sql`INSERT INTO super_t3_proposal_origins VALUES ('task-1', 'slack:C1:1.0', 1)`;
         assert.strictEqual(yield* instructionsFor(["accepted:task-1"]), tagged);
-        assert.isUndefined(yield* instructionsFor(["accepted:task-2"]));
+        assert.strictEqual(yield* instructionsFor(["accepted:task-2"]), "# You are a worker");
       }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
   );
 });

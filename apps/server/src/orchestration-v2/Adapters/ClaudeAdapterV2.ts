@@ -1543,6 +1543,7 @@ export function makeClaudeQueryOptions(input: {
   readonly appendSystemPromptFileText?: string;
   /** The thread's own trusted instructions, after T3 Code's. */
   readonly threadInstructions?: string;
+  /** No MCP server but T3's and no settings files, so neither CLAUDE.md nor plugins reach it. */
   readonly strictMcpConfig?: boolean;
   // Flag settings, because a user's settings.json env beats the process env in Claude Code.
   readonly toolSearchOverride?: "true";
@@ -1650,7 +1651,7 @@ export function makeClaudeQueryOptions(input: {
       : {}),
     ...(input.environment === undefined ? {} : { env: input.environment }),
     ...(input.mcpServers === undefined ? {} : { mcpServers: input.mcpServers }),
-    ...(input.strictMcpConfig === true ? { strictMcpConfig: true } : {}),
+    ...(input.strictMcpConfig === true ? { strictMcpConfig: true, settingSources: [] } : {}),
     systemPrompt: {
       type: "preset" as const,
       preset: "claude_code" as const,
