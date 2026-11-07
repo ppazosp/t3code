@@ -2,6 +2,7 @@ import type { EnvironmentProject } from "@t3tools/client-runtime/state/models";
 import {
   AlarmClockIcon,
   CircleAlertIcon,
+  EyeIcon,
   CircleCheckIcon,
   CircleDotIcon,
   ClockIcon,
@@ -37,8 +38,7 @@ import type { TaskActions } from "./useTaskActions";
 const STATUS_GLYPHS: Record<TaskStatus, { Icon: LucideIcon; className: string }> = {
   proposed: { Icon: LightbulbIcon, className: "text-primary" },
   needs_you: { Icon: CircleAlertIcon, className: "text-warning" },
-  // Finished work waiting for review needs the user too, so it shares the Needs you column's icon.
-  review: { Icon: CircleAlertIcon, className: "text-warning" },
+  review: { Icon: EyeIcon, className: "text-success" },
   working: { Icon: CircleDotIcon, className: "text-info" },
   done: { Icon: CircleCheckIcon, className: "text-muted-foreground" },
   snoozed: { Icon: AlarmClockIcon, className: "text-muted-foreground" },
@@ -88,6 +88,41 @@ export function TaskSubtaskCount({ task }: { task: TaskNode }) {
       </TooltipTrigger>
       <TooltipPopup side="top">{`${done} of ${total} subtasks finished`}</TooltipPopup>
     </Tooltip>
+  );
+}
+
+/** How many subtasks a card names; the rest are counted. */
+const SUBTASKS_SHOWN = 3;
+
+/** A task's own subtasks, each with its status, like Linear's sub-issues. Each opens on click. */
+export function TaskSubtaskList({
+  task,
+  onOpen,
+}: {
+  task: TaskNode;
+  onOpen: (subtask: TaskNode) => void;
+}) {
+  if (task.subtasks.length === 0) return null;
+  const hidden = task.subtasks.length - SUBTASKS_SHOWN;
+  return (
+    <ul
+      aria-label="Subtasks"
+      className="mt-0.5 flex min-w-0 flex-col gap-0.5 border-l border-border pl-2"
+    >
+      {task.subtasks.slice(0, SUBTASKS_SHOWN).map((subtask) => (
+        <li key={subtask.key} className="min-w-0">
+          <button
+            type="button"
+            onClick={() => onOpen(subtask)}
+            className="pointer-events-auto relative z-10 flex w-full min-w-0 items-center gap-1.5 rounded-sm text-left text-2xs text-muted-foreground outline-hidden hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          >
+            <TaskStatusGlyph status={subtask.status} className="size-3" />
+            <span className="truncate">{subtask.thread.title}</span>
+          </button>
+        </li>
+      ))}
+      {hidden > 0 ? <li className="text-2xs text-muted-foreground/70">+{hidden} more</li> : null}
+    </ul>
   );
 }
 

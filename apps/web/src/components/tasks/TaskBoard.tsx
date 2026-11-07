@@ -3,6 +3,7 @@ import { ChevronRightIcon } from "lucide-react";
 import { useState, type DragEvent, type ReactNode } from "react";
 
 import { cn } from "~/lib/utils";
+import { Button } from "../ui/button";
 import { canApproveTask, TaskApproveButton } from "./TaskApproveButton";
 import {
   TaskBranchLabel,
@@ -13,7 +14,7 @@ import {
   TaskQuickActions,
   TaskSlackOrigin,
   TaskStatusPill,
-  TaskSubtaskCount,
+  TaskSubtaskList,
   TaskTitle,
   TaskUpdatedAt,
 } from "./TaskPresentation";
@@ -29,6 +30,7 @@ export interface BoardColumn {
 const COLUMN_GLYPH: Record<BoardColumnId, TaskStatus> = {
   proposed: "proposed",
   now: "needs_you",
+  review: "review",
   done: "done",
   snoozed: "snoozed",
 };
@@ -36,6 +38,7 @@ const COLUMN_GLYPH: Record<BoardColumnId, TaskStatus> = {
 const EMPTY_TEXT: Record<BoardColumnId, string> = {
   proposed: "Nothing to approve. The router proposes work here.",
   now: "Nothing needs you right now.",
+  review: "Nothing finished to review.",
   done: "Nothing done yet.",
   snoozed: "Nothing snoozed.",
 };
@@ -68,12 +71,14 @@ export function TaskBoard({
       actions={actions}
       selected={task.key === selectedKey}
       onOpen={() => onOpen(task)}
+      onOpenTask={onOpen}
     />
   );
   // Dropping a card asks for what that column stands for, where that is the user's call.
   const drop = (task: TaskNode, column: BoardColumnId) => {
     if (column === "proposed" || column === "done") void actions.moveTask(task, column);
-    else if (column === "now" && task.status === "done") void actions.unsettle(task);
+    else if ((column === "now" || column === "review") && task.status === "done")
+      void actions.unsettle(task);
   };
   const dropTarget = (column: BoardColumnId) => ({
     onDragOver: (event: DragEvent) => {
@@ -226,12 +231,14 @@ function TaskCard({
   actions,
   selected,
   onOpen,
+  onOpenTask,
 }: {
   task: TaskNode;
   project: EnvironmentProject | undefined;
   actions: TaskActions;
   selected: boolean;
   onOpen: () => void;
+  onOpenTask: (task: TaskNode) => void;
 }) {
   return (
     <div
@@ -272,30 +279,37 @@ function TaskCard({
           <span className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 empty:hidden">
             <TaskSlackOrigin task={task} />
             <TaskStatusPill task={task} />
-            <TaskSubtaskCount task={task} />
           </span>
           <TaskBranchLabel task={task} />
           <TaskModelLabel task={task} />
+          <TaskSubtaskList task={task} onOpen={onOpenTask} />
         </span>
       </span>
       <span className="pointer-events-none flex min-h-6 min-w-0 items-center gap-2 pl-5.5">
         <TaskProjectLabel project={project} />
         <TaskPinnedMark task={task} />
         <span className="ml-auto">
-          {canApproveTask(task) ? (
-            <span className="pointer-events-auto relative z-10">
-              <TaskApproveButton task={task} />
-            </span>
-          ) : (
-            <TaskUpdatedAt task={task} />
-          )}
+          <TaskUpdatedAt task={task} />
         </span>
       </span>
+      {canApproveTask(task) ? <ProposalDecision task={task} actions={actions} /> : null}
       <TaskQuickActions
         task={task}
         actions={actions}
         className="absolute top-1.5 right-1.5 rounded-md bg-card shadow-xs/5"
       />
     </div>
+  );
+}
+
+/** A proposal's two answers, side by side, at the foot of its card. */
+function ProposalDecision({ task, actions }: { task: TaskNode; actions: TaskActions }) {
+  return (
+    <span className="relative z-10 grid grid-cols-2 gap-2">
+      <Button size="xs" variant="outline" onClick={() => void actions.discard(task)}>
+        Discard
+      </Button>
+      <TaskApproveButton task={task} />
+    </span>
   );
 }

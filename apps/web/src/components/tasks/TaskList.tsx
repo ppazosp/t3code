@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { cn } from "~/lib/utils";
 import { canApproveTask, TaskApproveButton } from "./TaskApproveButton";
+import { Button } from "../ui/button";
 import { Separator } from "../ui/separator";
 import {
   TaskBranchLabel,
@@ -140,7 +141,14 @@ function TaskRow({
             <TaskUpdatedAt task={task} />
           </span>
         </button>
-        {canApproveTask(task) ? <TaskApproveButton task={task} /> : null}
+        {canApproveTask(task) ? (
+          <>
+            <Button size="xs" variant="outline" onClick={() => void actions.discard(task)}>
+              Discard
+            </Button>
+            <TaskApproveButton task={task} />
+          </>
+        ) : null}
         <TaskQuickActions task={task} actions={actions} />
       </div>
       {expanded

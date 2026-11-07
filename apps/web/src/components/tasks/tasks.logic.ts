@@ -47,7 +47,8 @@ interface ColumnDefinition {
 
 export const BOARD_COLUMNS = [
   { id: "proposed", label: "Proposed", statuses: ["proposed"] },
-  { id: "now", label: "Needs you", statuses: ["needs_you", "review", "working"] },
+  { id: "now", label: "Needs you", statuses: ["needs_you", "working"] },
+  { id: "review", label: "Ready for review", statuses: ["review"] },
 ] as const satisfies ReadonlyArray<ColumnDefinition>;
 
 /** Work that no longer needs the user, listed beside the board and opened on demand. */

@@ -109,6 +109,9 @@ export function useTaskActions() {
     reportFailure("Could not mark the task done", await threadActions.settleThread(refOf(task)));
   const unsettle = async (task: TaskNode) =>
     reportFailure("Could not reopen the task", await threadActions.unsettleThread(refOf(task)));
+  /** Turns a proposal down without asking: it is archived, so it can be brought back. */
+  const discard = async (task: TaskNode) =>
+    reportFailure("Could not discard the proposal", await threadActions.archiveThread(refOf(task)));
 
   /** Moving a task changes what its status means, where that is the user's call. */
   const moveTask = async (task: TaskNode, status: TaskStatus) => {
@@ -362,6 +365,7 @@ export function useTaskActions() {
     openSnoozeMenu,
     settle,
     unsettle,
+    discard,
     openMenu,
     canOperate,
     rename: {
