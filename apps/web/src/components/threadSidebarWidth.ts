@@ -1,7 +1,8 @@
 export const THREAD_SIDEBAR_WIDTH_STORAGE_KEY = "chat_thread_sidebar_width";
 const THREAD_SIDEBAR_DEFAULT_WIDTH = 16 * 16;
 const THREAD_SIDEBAR_MIN_WIDTH = 13 * 16;
-export const THREAD_MAIN_CONTENT_MIN_WIDTH = 40 * 16;
+// super-t3: the sidebar widens into the task board, so the chat beside it may be narrower.
+export const THREAD_MAIN_CONTENT_MIN_WIDTH = 32 * 16;
 
 export function resolveThreadSidebarMinimumWidth(brandWidth: number): number {
   return Math.max(THREAD_SIDEBAR_MIN_WIDTH, Math.ceil(brandWidth));

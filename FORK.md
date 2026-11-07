@@ -4,9 +4,9 @@ super-t3 is a fork of T3 Code that turns it into a super-agent: a task board, a 
 
 ## What it adds
 
-- Tasks: the home page, at `/tasks`. It shows threads as tasks in a board or a list, with no sidebar. A thread's delegated threads are its subtasks. The board has three columns: Proposed (waiting for your approval, with Discard and Approve on each card; Discard archives it), Needs you (approvals, questions and failures, with running work in a Working section at its foot) and Ready for review (finished work, for example waiting for you to merge). Like Linear, Done and Snoozed are hidden columns, listed at the right of the board with their counts; click one to see its tasks. The list folds the same two sections. Each card shows its worktree and its model on their own lines, and lists up to three subtasks with their status (more are counted), and carries the thread sidebar's actions: hover buttons to mark done and snooze, and the full thread menu on right-click or the "…" button, with a Status submenu. Dropping a card on Done settles it. Keys: `j` and `k` move, Enter opens, `/` searches, `c` writes to the router.
-- Inside a thread, the left sidebar lists the board's tasks by status, and the details panel on the right starts with the task: its title, its status (which you can change), the task it belongs to, its subtasks, and Approve for a proposal.
-- The router: one thread, tagged `router`, whose composer floats over the bottom of the board, with T3's own model and mode controls. Nothing else floats with it; the board shows around it. Once a message you send there reaches the router, its conversation opens like any other thread's. It reads, proposes tasks and follows them. It does not do the work itself.
+- Tasks: T3's main sidebar shows threads as tasks. A thread's delegated threads are its subtasks. Narrow, the sidebar lists them by status beside the open thread. Drag it wider than 600 px, or press Task board at its top, and it becomes the task board, with the thread you have open still beside it. The board has three columns: Proposed (waiting for your approval, with Discard and Approve on each card; Discard archives it), Needs you (approvals, questions and failures, with running work in a Working section at its foot) and Ready for review (finished work, for example waiting for you to merge). Like Linear, Done and Snoozed are hidden columns, listed at the right of the board with their counts; click one to see its tasks. Each card shows its worktree and its model on their own lines, lists up to three subtasks with their status (more are counted), and carries the thread sidebar's actions: hover buttons to mark done and snooze, and the full thread menu on right-click or the "…" button, with a Status submenu. Dropping a card on Done settles it.
+- Inside a thread, the details panel on the right starts with the task: its title, its status (which you can change), the task it belongs to, its subtasks, and Approve for a proposal.
+- The router: one thread, tagged `router`, and the home page: opening super-t3 shows its conversation beside the task sidebar. Until there is a router, home offers to set one up. It reads, proposes tasks and follows them. It does not do the work itself.
 - Channels: outside conversations, each an adapter behind one interface (`apps/server/src/channels/Channel.ts`). Slack is the first. Your DMs and mentions, and every message in channels you choose, reach the router. What it proposes from them waits in the Proposed column, with the Slack logo. When the proposal came from your own message, super-t3 says so in that Slack thread and reports the task there; a task proposed from someone else's message never posts in their thread (it is tagged `from-you` only when you wrote the message). You approve in T3, never in Slack. Once you do, the task's progress shows in that thread as one message that follows the task's plan, step by step, and ends with its outcome and its last message. When you reply in that thread (in a DM, or with a mention in a channel), your reply goes straight to the task; when one conversation fed several tasks, it goes to the router instead. Progress messages live in memory, so a restart mid-run posts a fresh one for the next run rather than editing the old one.
 
 ## What the router can do
@@ -33,18 +33,15 @@ Use a Slack app of its own. Slack splits events between every connection on one 
 
 ## Merging upstream
 
-Fork code lives in its own files: `apps/web/src/components/tasks/`, `apps/web/src/routes/_chat.tasks.tsx`, `apps/server/src/router/`, `apps/server/src/channels/`, `apps/server/src/mcp/toolkits/channels/` and `packages/contracts/src/router.ts`.
+Fork code lives in its own files: `apps/web/src/components/tasks/`, `apps/server/src/router/`, `apps/server/src/channels/`, `apps/server/src/mcp/toolkits/channels/` and `packages/contracts/src/router.ts`.
 
 These upstream files carry small edits, and are where a merge can conflict:
 
-- `apps/web/src/components/AppSidebarLayout.tsx`: the task sidebar replaces the thread sidebar, and the board has none, but keeps the app's commands.
+- `apps/web/src/components/AppSidebarLayout.tsx`: the task sidebar replaces the thread sidebar, and gets the sidebar's width.
+- `apps/web/src/components/threadSidebarWidth.ts`: the chat beside the sidebar may be 512 px instead of 640, so the board fits.
 - `apps/web/src/components/chat/ThreadDetailsPanel.tsx`: the task section at the top of the details panel.
 - `apps/web/src/components/Icons.tsx`: the Slack logo, added at the end.
-- `apps/web/src/lib/sideChatPane.ts`, `apps/web/src/components/ChatView.tsx` and `apps/web/src/components/chat/ChatComposer.tsx`: an embedded chat can set its composer's placeholder, for the router's composer.
-- `apps/web/src/routes/_chat.index.tsx`: the home page opens the board.
-- `apps/web/src/components/sidebar/SidebarChrome.tsx`: the Tasks button.
-- `apps/web/src/components/sidebar/mainAppLocation.ts`: `/tasks` is a utility page.
-- `apps/web/src/routeTree.gen.ts`: generated; regenerate it rather than merging it.
+- `apps/web/src/routes/_chat.index.tsx`: the home page opens the router.
 - `packages/client-runtime/src/operations/commands.ts` and `packages/client-runtime/src/state/threadCommands.ts`: a command to set a thread tag.
 - `packages/contracts/src/index.ts`: exports `router.ts`.
 - `packages/provider-core/src/server/ProviderAdapter.ts`: `t3ToolAllowlist` on the runtime policy.

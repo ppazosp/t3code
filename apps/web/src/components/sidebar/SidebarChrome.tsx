@@ -1,10 +1,4 @@
-import {
-  ArrowLeftIcon,
-  ArrowRightIcon,
-  ChartNoAxesColumnIcon,
-  KanbanIcon,
-  SettingsIcon,
-} from "lucide-react";
+import { ArrowLeftIcon, ArrowRightIcon, ChartNoAxesColumnIcon, SettingsIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { memo } from "react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
@@ -244,10 +238,6 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
       search: readPullRequestListPreferences(),
     });
   };
-  const handleTasksClick = () => {
-    closeMobileSidebar();
-    void navigate({ to: "/tasks" });
-  };
   const handleSettingsClick = () => {
     closeMobileSidebar();
     void navigate({ to: "/settings" });
@@ -281,7 +271,6 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
             label="Settings"
             onClick={handleSettingsClick}
           />
-          <SidebarUtilityItem icon={<KanbanIcon />} label="Tasks" onClick={handleTasksClick} />
           {pullRequestsSupported ? (
             <SidebarUtilityItem
               icon={<PullRequestGlyph.pullRequest />}

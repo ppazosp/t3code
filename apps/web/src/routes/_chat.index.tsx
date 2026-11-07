@@ -1,10 +1,11 @@
 import { workspaceAreaProps } from "../lib/workspaceFocus";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
-import { createFileRoute, redirect, useRouter } from "@tanstack/react-router";
+import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { isElectron } from "../env";
+import { RouterHome } from "../components/tasks/RouterHome";
 import { NoProjectsHero } from "../components/NoProjectsHero";
 import { sortScopedProjectsForSidebar } from "../components/Sidebar.logic";
 import { Button } from "../components/ui/button";
@@ -30,7 +31,12 @@ function ChatIndexRouteView() {
     if (environments.length === 0) return <HostedEmptyState />;
   }
 
-  return <IndexDraftLanding />;
+  // super-t3: home is the router; T3's draft landing shows only before projects exist.
+  return (
+    <RouterHome>
+      <IndexDraftLanding />
+    </RouterHome>
+  );
 }
 
 function IndexDraftLanding() {
@@ -118,11 +124,5 @@ function DraftStartError({ onRetry }: { readonly onRetry: () => void }) {
 }
 
 export const Route = createFileRoute("/_chat/")({
-  // The task board is home. A hosted page with no environment still shows its empty state.
-  beforeLoad: ({ context }) => {
-    if (context.authGateState.status !== "hosted-static") {
-      throw redirect({ to: "/tasks", replace: true });
-    }
-  },
   component: ChatIndexRouteView,
 });

@@ -16,8 +16,6 @@ export function isInSideChatPane(target: EventTarget | null): boolean {
 export interface SideChatParentPanel {
   readonly openToolDiff: (target: ToolCallDiffTarget) => void;
   readonly runShellCommand: (command: string) => void;
-  /** What the embedded chat's empty composer says instead of the default. */
-  readonly composerPlaceholder?: string;
 }
 
 /** Opens `thread` in its tab when it is a side chat of `parentRef`; false for any other thread. */

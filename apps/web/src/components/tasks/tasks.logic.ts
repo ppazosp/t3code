@@ -61,11 +61,6 @@ export type BoardColumnId =
   | (typeof BOARD_COLUMNS)[number]["id"]
   | (typeof HIDDEN_COLUMNS)[number]["id"];
 
-/** Statuses the list shows folded, as the board hides them. */
-export const HIDDEN_STATUSES: ReadonlySet<TaskStatus> = new Set(
-  HIDDEN_COLUMNS.flatMap((column) => column.statuses),
-);
-
 export interface TaskNode {
   readonly key: string;
   readonly thread: EnvironmentThreadShell;

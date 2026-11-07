@@ -400,23 +400,11 @@ function SidebarControl() {
   );
 }
 
-/** The shell's commands where no sidebar control carries them, as on the task board. */
-function AppShellCommands() {
-  const router = useRouter();
-  const [ref] = useState(
-    () => (node: HTMLDivElement | null) =>
-      node === null ? undefined : registerAppShellCommands(router, node),
-  );
-  return <div ref={ref} hidden />;
-}
-
 export function AppSidebarLayout({ children }: { children: ReactNode }) {
   const sidebarArea = workspaceAreaProps("sidebar", 0, "Threads");
   const { active: panelAnimationsActive, durationMs: panelAnimationDurationMs } =
     usePanelAnimationSettings();
   const pathname = useLocation({ select: (location) => location.pathname });
-  // The task board is the home page and has no sidebar; threads list the board's tasks in it.
-  const onTaskBoard = pathname === "/tasks";
   const panelAnimationsSuppressed = usePanelNavigationSuppression(pathname);
   const routePanelAnimationsActive = panelAnimationsActive && !panelAnimationsSuppressed;
   const isMacosDesktop = isElectron && isMacPlatform(navigator.platform);
@@ -458,32 +446,35 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
         style={sidebarProviderStyle}
       >
         <SidebarBrandWidthProbe isElectron={isElectron} onWidthChange={setBrandWidth} />
-        {onTaskBoard ? null : (
-          <Sidebar
-            side="left"
-            collapsible="offcanvas"
-            data-app-sidebar=""
-            {...sidebarArea}
-            role="navigation"
-            aria-label="Threads"
-            resizable={{
-              maxWidth: sidebarMaximumWidth,
-              minWidth: sidebarMinimumWidth,
-              shouldAcceptWidth: ({ currentWidth, nextWidth, wrapper }) =>
-                nextWidth <= currentWidth ||
-                wrapper.clientWidth - nextWidth >= THREAD_MAIN_CONTENT_MIN_WIDTH,
-              storageKey: THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
-              onResize: setSidebarWidth,
-            }}
-            style={windowControlsInsetStyle}
-          >
-            <TaskSidebar />
-            <SidebarRail onDoubleClick={resetSidebarWidth} />
-          </Sidebar>
-        )}
+        <Sidebar
+          side="left"
+          collapsible="offcanvas"
+          data-app-sidebar=""
+          {...sidebarArea}
+          role="navigation"
+          aria-label="Threads"
+          resizable={{
+            maxWidth: sidebarMaximumWidth,
+            minWidth: sidebarMinimumWidth,
+            shouldAcceptWidth: ({ currentWidth, nextWidth, wrapper }) =>
+              nextWidth <= currentWidth ||
+              wrapper.clientWidth - nextWidth >= THREAD_MAIN_CONTENT_MIN_WIDTH,
+            storageKey: THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
+            onResize: setSidebarWidth,
+          }}
+          style={windowControlsInsetStyle}
+        >
+          {/* Tasks replace the thread list; dragged wide enough, the sidebar becomes the board. */}
+          <TaskSidebar
+            width={clampThreadSidebarWidth(sidebarWidth, sidebarMinimumWidth, sidebarMaximumWidth)}
+            maxWidth={sidebarMaximumWidth}
+            onWidthChange={setSidebarWidth}
+          />
+          <SidebarRail onDoubleClick={resetSidebarWidth} />
+        </Sidebar>
         {children}
         <BackgroundThreadAnnouncer />
-        {onTaskBoard ? <AppShellCommands /> : <SidebarControl />}
+        <SidebarControl />
         {isElectron ? <HistorySwipeNavigation /> : null}
       </SidebarProvider>
     </PanelAnimationSuppressionProvider>

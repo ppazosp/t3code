@@ -94,7 +94,7 @@ export function TaskBoard({
     },
   });
   return (
-    <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto px-4 pb-4 sm:px-6">
+    <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto px-2 pb-2">
       {columns.map(({ id, label, tasks }) => {
         const urgent = id === "now" ? tasks.filter((task) => task.status !== "working") : tasks;
         const working = id === "now" ? tasks.filter((task) => task.status === "working") : [];
@@ -102,7 +102,7 @@ export function TaskBoard({
           <section
             key={id}
             aria-label={label}
-            className="flex w-72 shrink-0 flex-col gap-2 xl:w-80"
+            className="flex min-w-56 flex-1 basis-0 flex-col gap-2"
             {...dropTarget(id)}
           >
             <header className="flex h-7 items-center gap-2 px-1.5 text-xs font-medium">
@@ -113,7 +113,7 @@ export function TaskBoard({
             {/* The router's composer floats over the bottom; the last card can scroll above it. */}
             <div
               className={cn(
-                "flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto rounded-xl bg-muted/30 p-2 pb-(--router-dock-space)",
+                "flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto rounded-xl bg-muted/30 p-2",
                 SCROLLBAR_ON_HOVER,
               )}
             >
@@ -136,10 +136,7 @@ export function TaskBoard({
         );
       })}
       {/* Like Linear, columns that do not need the user wait at the side, one click away. */}
-      <aside
-        aria-label="Hidden columns"
-        className="ml-auto flex w-72 shrink-0 flex-col gap-2 xl:w-80"
-      >
+      <aside aria-label="Hidden columns" className="flex w-52 shrink-0 flex-col gap-2">
         <button
           type="button"
           aria-expanded={hiddenOpen}
@@ -155,7 +152,7 @@ export function TaskBoard({
         {hiddenOpen ? (
           <div
             className={cn(
-              "flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto pb-(--router-dock-space)",
+              "flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto",
               SCROLLBAR_ON_HOVER,
             )}
           >
