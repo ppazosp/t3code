@@ -77,7 +77,7 @@ export function isProposalTask(task: {
  */
 export const FROM_USER_TAG = "from-you";
 
-/** On every thread a proposal became, so it gets worker.md for as long as it lives. */
+/** On every thread a proposal became, so it gets WORKER.md for as long as it lives. */
 export const WORKER_TAG = "worker";
 
 const CHANNEL_HEADER = /^\[([a-z][a-z0-9-]*) (\S+) from (.+) ref=(([a-z][a-z0-9-]*):[^\s\]]+)\]$/u;

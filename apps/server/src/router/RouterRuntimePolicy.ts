@@ -29,7 +29,7 @@ export const ROUTER_TOOLS: ReadonlyArray<string> = [
 
 /**
  * The router only reads and proposes. It runs read-only in an empty folder, never asks for approval,
- * gets only the T3 tools it needs (Codex and Claude enforce that), and takes router.md as its system
+ * gets only the T3 tools it needs (Codex and Claude enforce that), and takes ROUTER.md as its system
  * prompt, read on every turn so an edit applies on the next one.
  */
 export const layer: Layer.Layer<RuntimePolicyV2, never, RuntimePolicyV2 | SuperT3Home> =

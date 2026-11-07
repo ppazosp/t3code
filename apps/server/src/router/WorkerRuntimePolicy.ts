@@ -18,7 +18,7 @@ const channelOf = (ref: string, channels: ReadonlyArray<RegisteredChannel>) =>
   channels.find((channel) => ref.startsWith(`${channel.name}:`));
 
 /**
- * Gives every worker the router proposed worker.md as part of its system prompt, read on every turn,
+ * Gives every worker the router proposed WORKER.md as part of its system prompt, read on every turn,
  * and a worker from a channel conversation the block for working there plus the channel's own. Its
  * first turn starts before the proposal is turned into tags, so a thread marked accepted reads its
  * origin from the proposal.

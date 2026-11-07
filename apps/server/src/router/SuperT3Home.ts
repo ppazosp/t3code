@@ -35,8 +35,8 @@ const decodeConfig = Schema.decodeUnknownEffect(Schema.fromJsonString(SuperT3Con
 const DEFAULT_CONFIG_TEXT = `${JSON.stringify(DEFAULT_CONFIG, null, 2)}\n`;
 
 /**
- * super-t3's own folder in T3's home: `config.json` (the router's and workers' models), `router.md`
- * (the router's system prompt) and `worker.md` (added to every worker's). They start as defaults and
+ * super-t3's own folder in T3's home: `config.json` (the router's and workers' models), `ROUTER.md`
+ * (the router's system prompt) and `WORKER.md` (added to every worker's). They start as defaults and
  * the user edits them; each read takes the file as it is now, so an edit applies on the next turn.
  */
 export class SuperT3Home extends Context.Service<
@@ -47,7 +47,7 @@ export class SuperT3Home extends Context.Service<
     readonly routerDir: string;
     readonly config: Effect.Effect<SuperT3Config>;
     readonly routerInstructions: Effect.Effect<string>;
-    /** Nothing when worker.md is empty. */
+    /** Nothing when WORKER.md is empty. */
     readonly workerInstructions: Effect.Effect<string | undefined>;
   }
 >()("t3/router/SuperT3Home") {}
@@ -62,16 +62,30 @@ export const layer = Layer.effect(
     const routerDir = path.join(dir, "router");
     const files = {
       config: path.join(dir, "config.json"),
-      router: path.join(dir, "router.md"),
-      worker: path.join(dir, "worker.md"),
+      router: path.join(dir, "ROUTER.md"),
+      worker: path.join(dir, "WORKER.md"),
     };
+    // Homes made before the names were upper case: rename by exact listing, since macOS matches
+    // names without case and would report ROUTER.md as there already.
+    const renameLowerCase = Effect.gen(function* () {
+      const names = yield* fs.readDirectory(dir);
+      for (const [lower, upper] of [
+        ["router.md", "ROUTER.md"],
+        ["worker.md", "WORKER.md"],
+      ] as const) {
+        if (names.includes(lower) && !names.includes(upper)) {
+          yield* fs.rename(path.join(dir, lower), path.join(dir, upper));
+        }
+      }
+    }).pipe(Effect.ignore);
     // Seed what is missing; never overwrite what the user wrote.
     const seed = (file: string, text: string) =>
       fs
         .exists(file)
         .pipe(Effect.flatMap((exists) => (exists ? Effect.void : fs.writeFileString(file, text))));
+    yield* fs.makeDirectory(routerDir, { recursive: true }).pipe(Effect.ignore);
+    yield* renameLowerCase;
     yield* Effect.all([
-      fs.makeDirectory(routerDir, { recursive: true }),
       seed(files.config, DEFAULT_CONFIG_TEXT),
       seed(files.router, DEFAULT_ROUTER_MD),
       seed(files.worker, DEFAULT_WORKER_MD),

@@ -39,13 +39,13 @@ const instructionsFor = (tags: ReadonlyArray<string>) =>
 
 describe("WorkerRuntimePolicy.layer", () => {
   it.effect(
-    "gives every worker worker.md, and a channel task's worker the blocks for working there",
+    "gives every worker WORKER.md, and a channel task's worker the blocks for working there",
     () =>
       Effect.gen(function* () {
         const sql = yield* SqlClient.SqlClient;
         assert.isUndefined(yield* instructionsFor([]));
         assert.isUndefined(yield* instructionsFor(["router"]));
-        // A worker from a proposal made in T3 gets worker.md alone, from its first turn on.
+        // A worker from a proposal made in T3 gets WORKER.md alone, from its first turn on.
         assert.strictEqual(yield* instructionsFor(["accepted:task-1"]), "# You are a worker");
         assert.strictEqual(yield* instructionsFor(["worker"]), "# You are a worker");
 

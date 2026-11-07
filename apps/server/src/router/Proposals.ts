@@ -313,7 +313,10 @@ export const layer = Layer.effect(
       };
     });
 
-    /** A thread to continue: it keeps its own folder and model, and one proposal waits for it at once. */
+    /**
+     * A thread to continue, archived ones included (sending the proposal brings one back): it keeps
+     * its own folder and model, and one proposal waits for it at once.
+     */
     const continuation = Effect.fn("Proposals.continuation")(function* (threadId: ThreadId) {
       const shell = yield* threads
         .getThreadShell(threadId)
@@ -324,11 +327,6 @@ export const layer = Layer.effect(
       if (isRouterThread(shell)) {
         return yield* new ProposalError({
           message: "You cannot propose work for your own thread.",
-        });
-      }
-      if (shell.archivedAt !== null) {
-        return yield* new ProposalError({
-          message: `${shell.title} is archived. Propose a new task, and name that thread in its brief.`,
         });
       }
       const waiting = yield* scheduled.list().pipe(
