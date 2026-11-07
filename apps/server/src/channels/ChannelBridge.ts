@@ -452,7 +452,10 @@ export const run = Effect.fn("ChannelBridge.run")(function* (input: {
     activeRuns.delete(runRecord.threadId);
     yield* show(report, { outcome, result: report.result });
     const asked = outcome === "completed" ? yield* askForPlan(report, runRecord.id) : false;
-    yield* setStatus(report.adapter, report.ref, asked ? "waiting" : "idle");
+    // A planning worker that ended without a plan asked the user something instead.
+    const planning =
+      outcome === "completed" && known.get(runRecord.threadId)?.interactionMode === "plan";
+    yield* setStatus(report.adapter, report.ref, asked || planning ? "waiting" : "idle");
   });
 
   const onEvent = Effect.fn("ChannelBridge.onEvent")(

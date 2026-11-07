@@ -113,7 +113,7 @@ describe("SlackAdapter against a mock Slack", () => {
         yield* Effect.promise(() => slack.until(() => progress.edits === 1, 3000));
         assert.deepStrictEqual(
           progress.blocks?.map((block) => block.type),
-          ["section", "task_card", "rich_text"],
+          ["section", "task_card", "markdown"],
         );
       }).pipe(Effect.scoped, Effect.provide(FetchHttpClient.layer)),
     ),

@@ -20,8 +20,11 @@ const SAY_LIMIT = 3000;
 export interface ChannelsShape {
   /** Posts the router's reply where a channel message came from, named by the `ref` it carried. */
   readonly reply: (ref: string, text: string) => Effect.Effect<void, ChannelError>;
-  /** Posts super-t3's own note in a conversation, such as a proposal it made from the user's message. */
-  readonly announce: (ref: string, text: string) => Effect.Effect<void, ChannelError>;
+  /**
+   * Marks the user's message handled once the router proposed work for it. Nothing is posted: the
+   * proposal waits in T3, and the router stays quiet there.
+   */
+  readonly proposed: (ref: string) => Effect.Effect<void, ChannelError>;
   /** Posts a task's short answer in the conversation the user asked for it in, and nowhere else. */
   readonly say: (threadId: ThreadId, text: string) => Effect.Effect<void, ChannelError>;
   /** The latest messages of a conversation, for the router to read what came before. */
@@ -74,8 +77,9 @@ export const layer: Layer.Layer<
       yield* ChannelBridge.markHandled(state, adapter, ref);
     });
     return Channels.of({
-      announce: Effect.fn("Channels.announce")(function* (ref, text) {
-        yield* postHandled(ref, text);
+      proposed: Effect.fn("Channels.proposed")(function* (ref) {
+        const adapter = yield* adapterFor(ref);
+        yield* ChannelBridge.markHandled(state, adapter, ref);
         state.proposed.add(ref);
         if (state.proposed.size > 500) state.proposed.delete(state.proposed.values().next().value!);
       }),
@@ -83,7 +87,7 @@ export const layer: Layer.Layer<
         if (state.proposed.has(ref)) {
           return yield* new ChannelError({
             message:
-              "T3 already posted your proposal in this conversation, and that answers the user. End your turn without a reply.",
+              "You proposed work for this message, and the proposal is the answer: the user sees it in T3. End your turn without a reply.",
           });
         }
         // The router answers only where the user wrote to it, so text it read from anyone else

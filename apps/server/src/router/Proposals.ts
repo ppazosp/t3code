@@ -27,7 +27,6 @@ import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import * as Channels from "../channels/Channels.ts";
-import { proposalNote } from "../channels/bridge.ts";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import { ProviderRegistry } from "../provider/ProviderRegistry.ts";
@@ -267,10 +266,10 @@ export const layer = Layer.effect(
           );
           if (fromUser) {
             yield* channels
-              .announce(origin, proposalNote(input.title))
+              .proposed(origin)
               .pipe(
                 Effect.catchCause((cause) =>
-                  Effect.logWarning("Could not announce a proposal", { cause }),
+                  Effect.logWarning("Could not mark a proposed message handled", { cause }),
                 ),
               );
           }

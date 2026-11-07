@@ -10,7 +10,7 @@ super-t3 is a fork of T3 Code that turns it into a super-agent. It keeps T3's ow
   - DM super-t3, or mention it in a channel, and get 👀 within a second. It becomes ✅ once the router answers in the thread, or a worker takes your message.
   - In the router's chat, each message from a channel shows as a card, like a proposal's tab: the channel's logo, where and who it came from, when, and the message.
   - Ask a question, and the router answers in the thread. In a channel, it answers in a thread under your message.
-  - Ask for work, and the router proposes it. super-t3 says so in your thread, and the proposal waits in T3 for you to accept.
+  - Ask for work, and the router proposes it. Your message gets ✅ and nothing is posted: the proposal waits in T3 for you to accept.
   - Once you accept it, the worker's progress shows in your thread as one message that follows its plan step by step, then ends with the outcome and the worker's last message.
   - A worker that starts with a plan posts it in your thread with Approve and Change buttons. Approve runs T3's own "implement this plan" step. Change opens a form, and what you write goes back to the worker, which plans again. Only your answer counts, and only the first one; the plan then shows the answer in place of its buttons. A plan too long for one Slack message is not cut: super-t3 asks you to review it in T3 instead.
   - Reply in the thread while the worker runs (in a DM, or with a mention in a channel), and your reply goes straight to the worker, which answers you there with `channel_say`. When one conversation fed several workers, your reply goes to the router instead.

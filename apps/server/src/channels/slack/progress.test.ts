@@ -43,8 +43,21 @@ describe("progressContent", () => {
       blocks.filter((block) => block.type === "task_card").map((block) => block.status),
       ["complete", "error"],
     );
-    assert.strictEqual(blocks.at(-1)!.type, "rich_text");
+    assert.strictEqual(blocks.at(-1)!.type, "markdown");
     assert.strictEqual(blocks.length, 5);
+
+    const linked = progressContent({
+      title: "Fix",
+      steps: [],
+      finished: {
+        outcome: "completed",
+        result: "Changed [calc.py](/Users/me/repo/calc.py), see [docs](https://example.com/a).",
+      },
+    });
+    assert.strictEqual(
+      linked.blocks.at(-1)!.text,
+      "Changed calc.py, see docs (https://example.com/a).",
+    );
   });
 
   it("folds the earliest steps so a long plan fits in one message", () => {

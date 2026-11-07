@@ -65,10 +65,6 @@ export function reportTarget(thread: BridgeThread, prefixes: ReadonlyArray<strin
   return originOf(thread, prefixes);
 }
 
-export function proposalNote(title: string): string {
-  return `Proposed in super-t3: ${title}. It starts when you accept it there.`;
-}
-
 export const progressSteps = (
   steps: ReadonlyArray<OrchestrationV2PlanStep>,
 ): ReadonlyArray<ProgressStep> =>

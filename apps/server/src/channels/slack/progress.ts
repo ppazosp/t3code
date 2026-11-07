@@ -1,5 +1,5 @@
 import type { Progress, ProgressStep } from "../Channel.ts";
-import { escapeSlackText } from "./parse.ts";
+import { escapeSlackText, slackMarkdown } from "./parse.ts";
 
 /** A message holds at most 50 blocks: the title, the outcome, the result and 47 step cards. */
 const MAX_CARDS = 47;
@@ -30,6 +30,8 @@ function cardStatus(step: ProgressStep, finished: Progress["finished"]): CardSta
   return "in_progress";
 }
 
+const FINISHED_TITLE = { completed: "Done", failed: "Failed", interrupted: "Stopped" } as const;
+
 function cardsOf(progress: Progress): ReadonlyArray<Card> {
   if (progress.steps.length === 0) {
     const status: CardStatus =
@@ -38,7 +40,9 @@ function cardsOf(progress: Progress): ReadonlyArray<Card> {
         : progress.finished.outcome === "completed"
           ? "complete"
           : "error";
-    return [{ id: "working", title: "Working", status }];
+    const title =
+      progress.finished === null ? "Working" : FINISHED_TITLE[progress.finished.outcome];
+    return [{ id: "working", title, status }];
   }
   const cards = progress.steps.map((step) => ({
     id: step.id,
@@ -66,6 +70,17 @@ const OUTCOME_LINE = {
 } as const;
 
 /**
+ * Markdown links as rich text shows them: a local file is just its name, which means nothing as a
+ * path on someone else's screen; a web link keeps its address.
+ */
+const plainLinks = (text: string) =>
+  text.replaceAll(/\[([^\]\n]+)\]\(([^)\s]+)\)/gu, (_, label: string, target: string) =>
+    /^[a-z][a-z0-9+.-]*:\/\//iu.test(target) && !target.startsWith("file:")
+      ? `${label} (${target})`
+      : label,
+  );
+
+/**
  * Slack's timeline style: the task's title, one card per step of its plan with its own spinner,
  * check or warning, then the outcome and the task's last message once it ends.
  */
@@ -86,16 +101,11 @@ export function progressContent(progress: Progress): {
   if (outcome !== null) {
     blocks.push({ type: "context", elements: [{ type: "mrkdwn", text: outcome }] });
   }
-  const full = progress.finished?.result?.trim() ?? "";
+  const full = plainLinks(progress.finished?.result?.trim() ?? "");
   const result =
     full.length <= MAX_RESULT ? full : `${full.slice(0, MAX_RESULT)}…\n\nThe rest is in T3.`;
-  // Rich text is never parsed as markup, so a model's message cannot hide a link or ping anyone.
-  if (result !== "") {
-    blocks.push({
-      type: "rich_text",
-      elements: [{ type: "rich_text_section", elements: [{ type: "text", text: result }] }],
-    });
-  }
+  // Markdown, as the worker wrote it, made safe like a plan: no pings, and no hidden links.
+  if (result !== "") blocks.push({ type: "markdown", text: slackMarkdown(result) });
   const fallback = [progress.title, outcome, result].filter(Boolean).join("\n\n");
   return { text: escapeSlackText(fallback), blocks };
 }

@@ -312,6 +312,13 @@ describe("ChannelBridge", () => {
           [ORIGIN, "working"],
           [ORIGIN, "waiting"],
         ]);
+
+        // A planning worker that asked a question instead of writing a plan also waits for the user.
+        const questioned = yield* runBridge({
+          existing: [userTask],
+          events: [runEvent("run.created", "running"), runEvent("run.updated", "completed")],
+        });
+        assert.deepStrictEqual(questioned.statuses.at(-1), [ORIGIN, "waiting"]);
       }),
   );
 
