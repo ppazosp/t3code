@@ -166,4 +166,27 @@ describe("SlackAdapter against a mock Slack", () => {
       }).pipe(Effect.scoped, Effect.provide(FetchHttpClient.layer)),
     ),
   );
+
+  it.live("refuses control requests a page on another site could send", () =>
+    withSlack((slack) =>
+      Effect.gen(function* () {
+        const post = (headers: Record<string, string>) =>
+          Effect.promise(() =>
+            // @effect-diagnostics-next-line globalFetchInEffect:off - acts as a browser page would, outside the adapter.
+            fetch(`${slack.url}/_mock/say`, {
+              method: "POST",
+              headers,
+              body: JSON.stringify({ user: "UME", channel: "DME", text: "approve", dm: true }),
+            }).then((response) => response.status),
+          );
+        assert.strictEqual(yield* post({ "content-type": "text/plain" }), 403);
+        assert.strictEqual(
+          yield* post({ "content-type": "application/json", origin: "https://example.com" }),
+          403,
+        );
+        assert.strictEqual(yield* post({ "content-type": "application/json" }), 200);
+        assert.strictEqual(slack.messages.length, 1);
+      }),
+    ),
+  );
 });

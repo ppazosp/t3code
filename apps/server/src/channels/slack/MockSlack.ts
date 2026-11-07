@@ -223,6 +223,19 @@ export function startMockSlack(options: { readonly port?: number } = {}): Promis
     }
   };
 
+  /**
+   * The control API writes and clicks as the user, so a page on another site must not reach it:
+   * a browser sends its origin, and a JSON body forces a preflight this server never answers.
+   */
+  const isOwnRequest = (request: NodeHttp.IncomingMessage, own: string) => {
+    const origin = request.headers.origin;
+    if (origin !== undefined && origin !== own) return false;
+    return (
+      request.method === "GET" ||
+      (request.headers["content-type"] ?? "").startsWith("application/json")
+    );
+  };
+
   const readBody = (request: NodeHttp.IncomingMessage) =>
     new Promise<string>((resolve) => {
       let body = "";
@@ -256,6 +269,9 @@ export function startMockSlack(options: { readonly port?: number } = {}): Promis
       try {
         if (url.pathname.startsWith("/api/")) {
           return send(response, 200, api(url.pathname.slice(5), args));
+        }
+        if (url.pathname.startsWith("/_mock/") && !isOwnRequest(request, state.url)) {
+          return send(response, 403, { ok: false, error: "forbidden" });
         }
         if (url.pathname === "/_mock/say") {
           return send(response, 200, { ts: say(args as never) });
@@ -352,6 +368,7 @@ const PAGE = `<!doctype html>
 <form id="say"><input name="text" placeholder="DM super-t3 as you (UME)" /><button>Send</button></form>
 <main id="main"></main>
 <script>
+const JSON_HEADERS = { "content-type": "application/json" };
 const icon = { complete: "✅", in_progress: "⏳", error: "⚠️" };
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const reacts = { eyes: "👀", white_check_mark: "✅" };
@@ -379,17 +396,17 @@ async function render() {
 document.addEventListener("click", async (e) => {
   const b = e.target.closest("button[data-a]");
   if (!b) return;
-  const { triggerId } = await (await fetch("/_mock/click", { method: "POST", body: JSON.stringify({ user: "UME", channel: b.dataset.c, ts: b.dataset.t, actionId: b.dataset.a }) })).json();
+  const { triggerId } = await (await fetch("/_mock/click", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ user: "UME", channel: b.dataset.c, ts: b.dataset.t, actionId: b.dataset.a }) })).json();
   if (b.dataset.a.endsWith("change")) {
     const text = prompt("What should change?");
-    if (text) await fetch("/_mock/submit", { method: "POST", body: JSON.stringify({ user: "UME", triggerId, text }) });
+    if (text) await fetch("/_mock/submit", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ user: "UME", triggerId, text }) });
   }
 });
 document.getElementById("say").addEventListener("submit", async (e) => {
   e.preventDefault();
   const text = e.target.text.value;
   e.target.text.value = "";
-  await fetch("/_mock/say", { method: "POST", body: JSON.stringify({ user: "UME", channel: "DME", text, dm: true }) });
+  await fetch("/_mock/say", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ user: "UME", channel: "DME", text, dm: true }) });
 });
 render();
 setInterval(render, 1000);
