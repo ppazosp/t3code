@@ -36,7 +36,7 @@ Fork code lives in its own files: `apps/web/src/components/router/`, `apps/serve
 
 These upstream files carry small edits, and are where a merge can conflict:
 
-- `apps/web/src/components/Sidebar.tsx`: the Router button and the Proposals section, above the threads.
+- `apps/web/src/components/Sidebar.tsx`: the Router button and the Proposals section above the threads, and the router left out of the thread list.
 - `apps/web/src/routes/_chat.index.tsx`: the home page opens the router.
 - `packages/client-runtime/src/operations/commands.ts` and `packages/client-runtime/src/state/threadCommands.ts`: a command to set a thread tag, which router setup uses.
 - `packages/contracts/src/index.ts`: exports `router.ts`.

@@ -150,7 +150,6 @@ import {
   useDelegatedUnderParent,
   useProjects,
   useServerConfigs,
-  useQuietThreadShells,
 } from "../state/entities";
 import { environmentPresentations } from "../state/presentation";
 import { primaryServerKeybindingsAtom } from "../state/server";
@@ -231,6 +230,7 @@ import {
 import { ProjectFavicon } from "./ProjectFavicon";
 import { deriveProviderEntriesByEnvironment } from "../providerInstances";
 import { RouterSection } from "./router/RouterSection";
+import { useListedThreadShells } from "./router/useListedThreadShells";
 import { useStableCallback } from "../hooks/useStableCallback";
 import {
   resolveSidebarRouteReveal,
@@ -1118,7 +1118,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             ),
           ),
         );
-  const threads = useQuietThreadShells();
+  // super-t3: the router has its own button, so it is left out of the list.
+  const threads = useListedThreadShells();
   const routeRowThreadKey =
     routeThreadRef === null
       ? null
