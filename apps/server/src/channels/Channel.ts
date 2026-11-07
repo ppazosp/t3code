@@ -30,20 +30,8 @@ export interface ChannelMessage {
   readonly text: string;
 }
 
-/** The answer to a plan T3 asked the user to approve in a channel. */
-export interface ChannelAnswer {
-  readonly askId: string;
-  /** The message that asked, as `askApproval` returned it, to show the outcome in. */
-  readonly message: string;
-  readonly fromUser: boolean;
-  readonly decision: "approve" | "change";
-  /** What to change; empty for an approval. */
-  readonly text: string;
-}
-
 export type ChannelEvent =
   | ({ readonly type: "message" } & ChannelMessage)
-  | ({ readonly type: "answer" } & ChannelAnswer)
   /** The channel's own Stop control, pressed in the conversation `ref` names. */
   | { readonly type: "stop"; readonly ref: string; readonly fromUser: boolean }
   /** Someone other than the user wrote to T3 directly, where T3 should say it works only for the user. */
@@ -51,32 +39,44 @@ export type ChannelEvent =
 
 /** One message read back from a conversation, oldest first. */
 export interface ChannelHistoryEntry {
+  readonly id: string;
   readonly author: string;
   readonly fromUser: boolean;
+  /** Written by a bot, T3 included. */
+  readonly bot: boolean;
   readonly text: string;
 }
 
-export interface ProgressStep {
-  readonly id: string;
-  readonly text: string;
-  readonly status: "pending" | "running" | "completed";
-}
+/** A chart a channel draws under a post, where it can draw one. */
+export type ChannelChart =
+  | {
+      readonly kind: "pie";
+      readonly title: string;
+      readonly segments: ReadonlyArray<{ readonly label: string; readonly value: number }>;
+    }
+  | {
+      readonly kind: "bar" | "line" | "area";
+      readonly title: string;
+      readonly categories: ReadonlyArray<string>;
+      /** One value per category, in the categories' order. */
+      readonly series: ReadonlyArray<{
+        readonly name: string;
+        readonly values: ReadonlyArray<number>;
+      }>;
+      readonly xLabel?: string | undefined;
+      readonly yLabel?: string | undefined;
+    };
 
-/** What a task is doing, as a channel shows it in one message it keeps editing. */
-export interface Progress {
-  readonly title: string;
-  readonly steps: ReadonlyArray<ProgressStep>;
-  /** Set once the run ends: how it ended, and the task's last message. */
-  readonly finished: {
-    readonly outcome: "completed" | "failed" | "interrupted";
-    readonly result: string | null;
-  } | null;
+/** What T3 posts: Markdown, which the adapter makes safe to post, and any charts under it. */
+export interface ChannelPost {
+  readonly text: string;
+  readonly charts?: ReadonlyArray<ChannelChart> | undefined;
 }
 
 /**
- * One outside channel, such as Slack: messages in; posts, reactions, progress and approvals out.
- * Everything the user sees in a channel goes through these operations, so a new channel is one
- * adapter and one entry in `registry.ts`.
+ * One outside channel, such as Slack: messages in; posts, reactions and status out. Everything the
+ * user sees in a channel goes through these operations, so a new channel is one adapter and one
+ * entry in `registry.ts`.
  */
 export interface ChannelAdapter {
   /** The channel's name in messages to the router, such as `slack`. */
@@ -84,8 +84,11 @@ export interface ChannelAdapter {
   /** The prefix of every ref this channel issues: the name and a colon. */
   readonly prefix: string;
   readonly events: Stream.Stream<ChannelEvent>;
-  /** Posts plain text in the conversation `ref` names. Markup in it shows as typed. */
-  readonly post: (ref: string, text: string) => Effect.Effect<void, ChannelError>;
+  /**
+   * Posts in the conversation `ref` names. Markdown renders, but cannot ping anyone or hide a link.
+   * Returns the posted message's id.
+   */
+  readonly post: (ref: string, post: ChannelPost) => Effect.Effect<string, ChannelError>;
   /**
    * Shows that T3 has a message (`seen`), then that it is handled (`done`): the router answered,
    * or a task took it. Slack shows these as 👀 and ✅ reactions.
@@ -105,35 +108,6 @@ export interface ChannelAdapter {
     ref: string,
     limit: number,
   ) => Effect.Effect<ReadonlyArray<ChannelHistoryEntry>, ChannelError>;
-  /**
-   * Posts a progress message in the conversation `ref` names, or edits `message`, the ref an earlier
-   * call returned. The adapter spaces out edits, so callers can send every change.
-   */
-  readonly showProgress: (input: {
-    readonly ref: string;
-    readonly message: string | null;
-    readonly progress: Progress;
-  }) => Effect.Effect<string, ChannelError>;
-  /**
-   * Posts a plan in the conversation `ref` names, in full, with Approve and Change buttons. A click
-   * arrives as an `answer` event for `askId`. Returns the message. A plan too long for one message
-   * is refused, never cut: the user approves only what they could read.
-   */
-  readonly askApproval: (input: {
-    readonly ref: string;
-    readonly askId: string;
-    readonly title: string;
-    readonly text: string;
-  }) => Effect.Effect<string, ChannelError>;
-  /** Whether a plan fits one message of this channel once it is made safe to post. */
-  readonly fits: (text: string) => boolean;
-  /** Shows the outcome in place of the buttons, so an answered plan cannot be answered again. */
-  readonly closeApproval: (input: {
-    readonly message: string;
-    readonly title: string;
-    readonly text: string;
-    readonly outcome: string;
-  }) => Effect.Effect<void, ChannelError>;
 }
 
 /**

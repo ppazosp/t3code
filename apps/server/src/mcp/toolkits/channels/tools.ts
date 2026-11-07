@@ -28,7 +28,7 @@ const ChannelReplyTool = Tool.make("channel_reply", {
 
 const ChannelSayTool = Tool.make("channel_say", {
   description:
-    "Workers only. Post a short answer in the Slack thread the user started you from, when they write to you there. Plain text, at most 3000 characters; your result is posted there by itself when you finish.",
+    "Workers only. Post in the channel conversation your task came from, such as a Slack thread, before you finish: a question you need answered, or a short note. Markdown, at most 3000 characters. Your final message is posted there by itself when you finish, so do not repeat it.",
   parameters: Schema.Struct({
     text: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(3000)),
   }),
@@ -70,4 +70,41 @@ const ChannelReadTool = Tool.make("channel_read", {
   .annotate(Tool.Destructive, false)
   .annotate(Tool.OpenWorld, true);
 
-export const ChannelsToolkit = Toolkit.make(ChannelReplyTool, ChannelSayTool, ChannelReadTool);
+const ChartSeries = Schema.Struct({
+  name: Schema.String,
+  values: Schema.Array(Schema.Number),
+});
+
+const ChannelChartTool = Tool.make("channel_chart", {
+  description:
+    "Workers only. Attach a chart to your final message in the channel conversation your task came from; at most 2. A pie chart takes `segments` (1-12, label and value above 0). A bar, line or area chart takes `categories` (the x-axis, 1-20) and `series` (1-12, each a name and one value per category). Titles are at most 50 characters; labels, categories and series names at most 20.",
+  parameters: Schema.Struct({
+    kind: Schema.Literals(["pie", "bar", "line", "area"]),
+    title: Schema.String,
+    segments: Schema.optional(
+      Schema.Array(Schema.Struct({ label: Schema.String, value: Schema.Number })),
+    ),
+    categories: Schema.optional(Schema.Array(Schema.String)),
+    series: Schema.optional(Schema.Array(ChartSeries)),
+    xLabel: Schema.optional(Schema.String),
+    yLabel: Schema.optional(Schema.String),
+  }),
+  success: Schema.Struct({ attached: Schema.Literal(true) }),
+  failure: OrchestratorMcpFailure,
+  failureMode: "return",
+  dependencies: [
+    McpInvocationContext.McpInvocationContext,
+    ThreadManagementService.ThreadManagementService,
+    Channels.Channels,
+  ],
+})
+  .annotate(Tool.Title, "Attach a chart to your answer")
+  .annotate(Tool.Destructive, false)
+  .annotate(Tool.OpenWorld, true);
+
+export const ChannelsToolkit = Toolkit.make(
+  ChannelReplyTool,
+  ChannelSayTool,
+  ChannelReadTool,
+  ChannelChartTool,
+);

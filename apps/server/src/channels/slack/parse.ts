@@ -1,7 +1,7 @@
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-import type { ChannelAnswer, ChannelMessage } from "../Channel.ts";
+import type { ChannelMessage } from "../Channel.ts";
 
 /**
  * Slack, as the router sees it. Socket Mode delivers events over a WebSocket, so the server needs
@@ -137,111 +137,6 @@ export function readSlackStop(
     fromUser: (stopped.value.user ?? stopped.value.user_id) === trustedUserId,
   };
 }
-
-export const APPROVE_ACTION = "super_t3_approve";
-export const CHANGE_ACTION = "super_t3_change";
-/** The form Change opens; sending it answers the plan. */
-export const CHANGE_FORM = "super_t3_change_form";
-const CHANGE_BLOCK = "change";
-const CHANGE_INPUT = "text";
-
-const ButtonClick = Schema.Struct({
-  type: Schema.Literal("block_actions"),
-  user: Schema.Struct({ id: Schema.String }),
-  trigger_id: Schema.optional(Schema.String),
-  container: Schema.Struct({ channel_id: Schema.String, message_ts: Schema.String }),
-  actions: Schema.Tuple([
-    Schema.Struct({
-      action_id: Schema.Literals([APPROVE_ACTION, CHANGE_ACTION]),
-      value: Schema.String,
-    }),
-  ]),
-});
-
-/** What the Change form carries back: the plan it answers and the message that asked. */
-const FormContext = Schema.Struct({ askId: Schema.String, message: Schema.String });
-const decodeFormContext = Schema.decodeUnknownOption(Schema.fromJsonString(FormContext));
-const encodeFormContext = Schema.encodeSync(Schema.fromJsonString(FormContext));
-
-const FormSent = Schema.Struct({
-  type: Schema.Literal("view_submission"),
-  user: Schema.Struct({ id: Schema.String }),
-  view: Schema.Struct({
-    callback_id: Schema.Literal(CHANGE_FORM),
-    private_metadata: Schema.String,
-    state: Schema.Struct({
-      values: Schema.Struct({
-        [CHANGE_BLOCK]: Schema.Struct({
-          [CHANGE_INPUT]: Schema.Struct({ value: Schema.NullOr(Schema.String) }),
-        }),
-      }),
-    }),
-  }),
-});
-
-const decodeInteraction = Schema.decodeUnknownOption(Schema.Union([ButtonClick, FormSent]));
-
-/**
- * A click on a plan's buttons, or the Change form sent. Approve answers the plan; Change only opens
- * the form (`openForm`), and the form, once sent, answers it.
- */
-export function readSlackInteraction(
-  payload: unknown,
-  trustedUserId: string,
-):
-  | { readonly type: "answer"; readonly answer: ChannelAnswer }
-  | { readonly type: "openForm"; readonly triggerId: string; readonly context: string }
-  | null {
-  const interaction = decodeInteraction(payload);
-  if (Option.isNone(interaction)) return null;
-  const value = interaction.value;
-  const fromUser = value.user.id === trustedUserId;
-  if (value.type === "block_actions") {
-    const [action] = value.actions;
-    const message = `slack:${value.container.channel_id}:${value.container.message_ts}`;
-    if (action.action_id === CHANGE_ACTION) {
-      if (value.trigger_id === undefined) return null;
-      return {
-        type: "openForm",
-        triggerId: value.trigger_id,
-        context: encodeFormContext({ askId: action.value, message }),
-      };
-    }
-    return {
-      type: "answer",
-      answer: { askId: action.value, message, fromUser, decision: "approve", text: "" },
-    };
-  }
-  const context = decodeFormContext(value.view.private_metadata);
-  if (Option.isNone(context)) return null;
-  return {
-    type: "answer",
-    answer: {
-      ...context.value,
-      fromUser,
-      decision: "change",
-      text: (value.view.state.values[CHANGE_BLOCK][CHANGE_INPUT].value ?? "").trim(),
-    },
-  };
-}
-
-/** The form that asks what to change. `context` names the plan and the message that asked. */
-export const changeForm = (context: string) => ({
-  type: "modal",
-  callback_id: CHANGE_FORM,
-  private_metadata: context,
-  title: { type: "plain_text", text: "Ask for changes" },
-  submit: { type: "plain_text", text: "Send" },
-  close: { type: "plain_text", text: "Cancel" },
-  blocks: [
-    {
-      type: "input",
-      block_id: CHANGE_BLOCK,
-      label: { type: "plain_text", text: "What should change?" },
-      element: { type: "plain_text_input", action_id: CHANGE_INPUT, multiline: true },
-    },
-  ],
-});
 
 export function parseSlackRef(
   ref: string,

@@ -1,4 +1,3 @@
-import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
@@ -10,16 +9,13 @@ import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 import {
   ChannelError,
   type ChannelAdapter,
+  type ChannelChart,
   type ChannelEvent,
   type ChannelHistoryEntry,
 } from "../Channel.ts";
 import {
-  APPROVE_ACTION,
-  CHANGE_ACTION,
-  changeForm,
   escapeSlackText,
   parseSlackRef,
-  readSlackInteraction,
   readSlackMessage,
   readSlackOutsider,
   readSlackStop,
@@ -28,7 +24,6 @@ import {
   SocketEnvelope,
   type SlackSettings,
 } from "./parse.ts";
-import { progressContent } from "./progress.ts";
 
 const SlackOk = Schema.Struct({ ok: Schema.Boolean, error: Schema.optional(Schema.String) });
 const ConnectionsOpen = Schema.Struct({ url: Schema.String });
@@ -37,6 +32,7 @@ const Posted = Schema.Struct({ channel: Schema.String, ts: Schema.String });
 const Replies = Schema.Struct({
   messages: Schema.Array(
     Schema.Struct({
+      ts: Schema.String,
       user: Schema.optional(Schema.String),
       bot_id: Schema.optional(Schema.String),
       text: Schema.optional(Schema.String),
@@ -71,9 +67,6 @@ const headerSafe = (name: string) =>
     .replaceAll(/[\][\n\r]/gu, " ")
     .replaceAll(/\s(from|ref=)\s?/giu, " ")
     .trim();
-
-/** Slack allows about one edit of a message a second. */
-const EDIT_SPACING_MS = 1_000;
 
 const SEEN_LIMIT = 500;
 
@@ -128,11 +121,45 @@ const ignoreReactionState = <A, R>(effect: Effect.Effect<A, ChannelError, R>) =>
 /** Slack's names for a session's status: "processing" shows its loading line and Stop button. */
 const SESSION_STATUS = { working: "processing", idle: "active", waiting: "suspended" } as const;
 
-/** Slack refuses a section with more than 3000 characters; a title never needs that. */
-const titleSection = (title: string) => ({
-  type: "section",
-  text: { type: "mrkdwn", text: `*${escapeSlackText(title.slice(0, 2900))}*` },
-});
+/** Slack's data visualization block for a chart. */
+const chartBlock = (chart: ChannelChart) =>
+  chart.kind === "pie"
+    ? {
+        type: "data_visualization",
+        title: chart.title,
+        chart: { type: "pie", segments: chart.segments },
+      }
+    : {
+        type: "data_visualization",
+        title: chart.title,
+        chart: {
+          type: chart.kind,
+          series: chart.series.map((series) => ({
+            name: series.name,
+            data: chart.categories.map((label, index) => ({
+              label,
+              value: series.values[index] ?? 0,
+            })),
+          })),
+          axis_config: {
+            categories: chart.categories,
+            ...(chart.xLabel === undefined ? {} : { x_label: chart.xLabel }),
+            ...(chart.yLabel === undefined ? {} : { y_label: chart.yLabel }),
+          },
+        },
+      };
+
+const CUT_NOTE = "\n\n…The rest is in T3.";
+
+/** Markdown cut to fit one Slack message, saying so; Slack refuses a longer block outright. */
+function fitted(text: string): string {
+  if (slackMarkdownFits(text)) return text;
+  let cut = text;
+  while (cut.length > 0 && !slackMarkdownFits(cut + CUT_NOTE)) {
+    cut = cut.slice(0, Math.floor(cut.length * 0.9));
+  }
+  return cut + CUT_NOTE;
+}
 
 const refOf = (ref: string) =>
   Effect.fromOption(parseSlackRef(ref)).pipe(
@@ -243,28 +270,6 @@ export const make = Effect.fn("SlackAdapter.make")(function* (settings: SlackSet
             socket.send(encodeAck({ envelope_id: envelope.value.envelope_id }));
           }
           if (envelope.value.type === "disconnect") return;
-          if (envelope.value.type === "interactive") {
-            const interaction = readSlackInteraction(
-              envelope.value.payload,
-              settings.trustedUserId,
-            );
-            if (interaction === null) continue;
-            if (interaction.type === "answer") {
-              yield* Queue.offer(inbox, { type: "answer", ...interaction.answer });
-              continue;
-            }
-            // Slack allows opening a form only within 3 seconds of the click, so it opens here.
-            yield* call(
-              "views.open",
-              { trigger_id: interaction.triggerId, view: changeForm(interaction.context) },
-              SlackOk,
-            ).pipe(
-              Effect.catchCause((cause) =>
-                Effect.logWarning("Could not open the Change form", { cause }),
-              ),
-            );
-            continue;
-          }
           if (envelope.value.type !== "events_api") continue;
           const stop = readSlackStop(envelope.value.payload, settings.trustedUserId);
           if (stop !== null) {
@@ -299,39 +304,6 @@ export const make = Effect.fn("SlackAdapter.make")(function* (settings: SlackSet
     scope,
   );
 
-  // The latest content waiting for each progress message, written at most once a second.
-  const edits = new Map<
-    string,
-    {
-      pending: ReturnType<typeof progressContent> | null;
-      running: boolean;
-      lastWrite: number;
-      /** The run ended; once its last edit is written the message is forgotten. */
-      final: boolean;
-    }
-  >();
-  const drain = Effect.fn("SlackAdapter.drainProgress")(function* (
-    message: string,
-    channel: string,
-    ts: string,
-  ) {
-    const state = edits.get(message)!;
-    while (state.pending !== null) {
-      const now = yield* Clock.currentTimeMillis;
-      yield* Effect.sleep(Math.max(0, state.lastWrite + EDIT_SPACING_MS - now));
-      const content = state.pending;
-      state.pending = null;
-      state.lastWrite = yield* Clock.currentTimeMillis;
-      yield* call("chat.update", { channel, ts, ...content }, SlackOk).pipe(
-        Effect.catchCause((cause) =>
-          Effect.logWarning("Could not update a Slack progress message", { cause }),
-        ),
-      );
-    }
-    state.running = false;
-    if (state.final) edits.delete(message);
-  });
-
   /** The newest `limit` replies of a thread: Slack sends them oldest first, a page at a time. */
   const readThread = Effect.fn("SlackAdapter.read")(function* (ref: string, limit: number) {
     const target = yield* refOf(ref);
@@ -353,19 +325,19 @@ export const make = Effect.fn("SlackAdapter.make")(function* (settings: SlackSet
             : fromUser
               ? "you"
               : yield* personName(message.user);
-        kept.push({ author, fromUser, text: message.text ?? "" });
+        kept.push({
+          id: `slack:${target.channel}:${message.ts}`,
+          author,
+          fromUser,
+          bot: message.bot_id !== undefined,
+          text: message.text ?? "",
+        });
       }
       kept = kept.slice(-limit);
       cursor = page.response_metadata?.next_cursor?.trim() || undefined;
     } while (cursor !== undefined);
     return kept;
   });
-
-  const approvalBlocks = (title: string, text: string, tail: Record<string, unknown>) => [
-    titleSection(title),
-    { type: "markdown", text: slackMarkdown(text) },
-    tail,
-  ];
 
   return {
     name: "slack",
@@ -396,105 +368,25 @@ export const make = Effect.fn("SlackAdapter.make")(function* (settings: SlackSet
         SlackOk,
       );
     }),
-    fits: slackMarkdownFits,
-    askApproval: Effect.fn("SlackAdapter.askApproval")(function* ({ ref, askId, title, text }) {
-      if (!slackMarkdownFits(text)) {
-        return yield* new ChannelError({ message: "The plan is too long for one Slack message." });
-      }
+    post: Effect.fn("SlackAdapter.post")(function* (ref, { text, charts = [] }) {
       const target = yield* refOf(ref);
+      const blocks = [
+        ...(text.trim() === "" ? [] : [{ type: "markdown", text: slackMarkdown(fitted(text)) }]),
+        ...charts.slice(0, 2).map(chartBlock),
+      ];
+      const fallback = text.trim() === "" ? charts.map((chart) => chart.title).join(", ") : text;
       const posted = yield* call(
         "chat.postMessage",
         {
           channel: target.channel,
           thread_ts: target.threadTs,
-          text: escapeSlackText(`Plan to approve: ${title}`),
-          blocks: approvalBlocks(title, text, {
-            type: "actions",
-            elements: [
-              {
-                type: "button",
-                action_id: APPROVE_ACTION,
-                text: { type: "plain_text", text: "Approve" },
-                style: "primary",
-                value: askId,
-              },
-              {
-                type: "button",
-                action_id: CHANGE_ACTION,
-                text: { type: "plain_text", text: "Change" },
-                value: askId,
-              },
-            ],
-          }),
+          // What notifications and clients without blocks show.
+          text: escapeSlackText(fallback.slice(0, 3000)),
+          blocks,
         },
         Posted,
       );
       return `slack:${posted.channel}:${posted.ts}`;
-    }),
-    closeApproval: Effect.fn("SlackAdapter.closeApproval")(function* ({
-      message,
-      title,
-      text,
-      outcome,
-    }) {
-      const target = yield* refOf(message);
-      yield* call(
-        "chat.update",
-        {
-          channel: target.channel,
-          ts: target.threadTs,
-          text: escapeSlackText(`${title}: ${outcome}`),
-          blocks: approvalBlocks(title, text, {
-            type: "context",
-            elements: [{ type: "mrkdwn", text: escapeSlackText(outcome).slice(0, 3000) }],
-          }),
-        },
-        SlackOk,
-      );
-    }),
-    post: Effect.fn("SlackAdapter.post")(function* (ref, text) {
-      const target = yield* refOf(ref);
-      yield* call(
-        "chat.postMessage",
-        { channel: target.channel, thread_ts: target.threadTs, text: escapeSlackText(text) },
-        SlackOk,
-      );
-    }),
-    showProgress: Effect.fn("SlackAdapter.showProgress")(function* ({ ref, message, progress }) {
-      const content = progressContent(progress);
-      if (message === null) {
-        const target = yield* refOf(ref);
-        const posted = yield* call(
-          "chat.postMessage",
-          { channel: target.channel, thread_ts: target.threadTs, ...content },
-          Posted,
-        );
-        const key = `slack:${posted.channel}:${posted.ts}`;
-        if (progress.finished === null) {
-          edits.set(key, {
-            pending: null,
-            running: false,
-            lastWrite: yield* Clock.currentTimeMillis,
-            final: false,
-          });
-        }
-        return key;
-      }
-      const target = yield* refOf(message);
-      const state = edits.get(message) ?? {
-        pending: null,
-        running: false,
-        lastWrite: 0,
-        final: false,
-      };
-      edits.set(message, state);
-      state.pending = content;
-      if (progress.finished !== null) state.final = true;
-      if (!state.running) {
-        state.running = true;
-        yield* Effect.forkIn(drain(message, target.channel, target.threadTs), scope);
-      }
-      return message;
     }),
   } satisfies ChannelAdapter;
 });

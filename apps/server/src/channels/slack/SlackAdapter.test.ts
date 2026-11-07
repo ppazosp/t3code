@@ -8,7 +8,6 @@ import { FetchHttpClient } from "effect/http";
 
 import type { ChannelEvent } from "../Channel.ts";
 import { startMockSlack, MOCK_BOT_USER, type MockSlack } from "./MockSlack.ts";
-import { APPROVE_ACTION, CHANGE_ACTION } from "./parse.ts";
 import * as SlackAdapter from "./SlackAdapter.ts";
 
 /** The real adapter against the mock Slack, with every event it reads collected. */
@@ -70,7 +69,7 @@ describe("SlackAdapter against a mock Slack", () => {
     ),
   );
 
-  it.live("marks, posts, reads and shows progress in the thread", () =>
+  it.live("marks, posts Markdown with charts, and reads the thread back", () =>
     withSlack((slack) =>
       Effect.gen(function* () {
         const { adapter } = yield* connect(slack);
@@ -82,93 +81,56 @@ describe("SlackAdapter against a mock Slack", () => {
         yield* adapter.mark(ref, "done");
         assert.deepStrictEqual([...slack.messages[0]!.reactions], ["white_check_mark"]);
 
-        yield* adapter.post(ref, "On it <!channel>");
-        assert.strictEqual(slack.messages[1]!.text, "On it &lt;!channel&gt;");
-        assert.strictEqual(slack.messages[1]!.threadTs, ts);
+        const posted = yield* adapter.post(ref, {
+          text: "**Done** <!channel> [docs](http://x)",
+          charts: [
+            { kind: "pie", title: "Orders", segments: [{ label: "Empty", value: 3 }] },
+            {
+              kind: "bar",
+              title: "Load",
+              categories: ["Mon", "Tue"],
+              series: [{ name: "Requests", values: [4, 7] }],
+              yLabel: "req/s",
+            },
+          ],
+        });
+        const reply = slack.messages[1]!;
+        assert.strictEqual(posted, `slack:DME:${reply.ts}`);
+        assert.strictEqual(reply.threadTs, ts);
+        assert.deepStrictEqual(reply.blocks, [
+          // Markdown renders, but cannot ping anyone or hide a link.
+          { type: "markdown", text: "**Done** &lt;!channel&gt; \\[docs](http://x)" },
+          {
+            type: "data_visualization",
+            title: "Orders",
+            chart: { type: "pie", segments: [{ label: "Empty", value: 3 }] },
+          },
+          {
+            type: "data_visualization",
+            title: "Load",
+            chart: {
+              type: "bar",
+              series: [
+                {
+                  name: "Requests",
+                  data: [
+                    { label: "Mon", value: 4 },
+                    { label: "Tue", value: 7 },
+                  ],
+                },
+              ],
+              axis_config: { categories: ["Mon", "Tue"], y_label: "req/s" },
+            },
+          },
+        ]);
 
         const history = yield* adapter.read(ref, 10);
         assert.deepStrictEqual(
-          history.map((entry) => [entry.author, entry.fromUser]),
+          history.map((entry) => [entry.id, entry.author, entry.fromUser, entry.bot]),
           [
-            ["you", true],
-            ["a bot", false],
+            [ref, "you", true, false],
+            [posted, "a bot", false, true],
           ],
-        );
-
-        const message = yield* adapter.showProgress({
-          ref,
-          message: null,
-          progress: { title: "Fix it", steps: [], finished: null },
-        });
-        yield* adapter.showProgress({
-          ref,
-          message,
-          progress: {
-            title: "Fix it",
-            steps: [{ id: "s1", text: "Write the fix", status: "completed" }],
-            finished: { outcome: "completed", result: "Done." },
-          },
-        });
-        const progress = slack.messages[2]!;
-        yield* Effect.promise(() => slack.until(() => progress.edits === 1, 3000));
-        assert.deepStrictEqual(
-          progress.blocks?.map((block) => block.type),
-          ["section", "task_card", "markdown"],
-        );
-      }).pipe(Effect.scoped, Effect.provide(FetchHttpClient.layer)),
-    ),
-  );
-
-  it.live("asks for approval with buttons, and reads Approve and the Change form as answers", () =>
-    withSlack((slack) =>
-      Effect.gen(function* () {
-        const { adapter, events } = yield* connect(slack);
-        const ts = slack.say({ user: "UME", channel: "DME", text: "plan it", dm: true });
-        const asked = yield* adapter.askApproval({
-          ref: `slack:DME:${ts}`,
-          askId: "plan:t:p",
-          title: "Add CSV export",
-          text: "1. Add a [link](http://x)",
-        });
-        const plan = slack.messages[1]!;
-        assert.strictEqual(asked, `slack:DME:${plan.ts}`);
-        assert.strictEqual(plan.blocks?.[1]?.text, "1. Add a \\[link](http://x)");
-
-        slack.click({ user: "UME", channel: "DME", ts: plan.ts, actionId: APPROVE_ACTION });
-        const triggerId = slack.click({
-          user: "UME",
-          channel: "DME",
-          ts: plan.ts,
-          actionId: CHANGE_ACTION,
-        });
-        yield* Effect.promise(() =>
-          slack.until(() => slack.calls.some((call) => call.method === "views.open")),
-        );
-        slack.submit({ user: "UME", triggerId, text: "also JSON" });
-        yield* Effect.promise(() => slack.until(() => events.length >= 3));
-        assert.deepStrictEqual(
-          events
-            .slice(1)
-            .map((event) =>
-              event.type === "answer"
-                ? [event.askId, event.message, event.decision, event.text]
-                : null,
-            ),
-          [
-            ["plan:t:p", asked, "approve", ""],
-            ["plan:t:p", asked, "change", "also JSON"],
-          ],
-        );
-
-        yield* adapter.closeApproval({
-          message: asked,
-          title: "Add CSV export",
-          text: "1. Add it",
-          outcome: "You approved it.",
-        });
-        assert.deepStrictEqual(
-          plan.blocks?.map((block) => block.type),
-          ["section", "markdown", "context"],
         );
       }).pipe(Effect.scoped, Effect.provide(FetchHttpClient.layer)),
     ),

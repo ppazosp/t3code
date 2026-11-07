@@ -8,7 +8,12 @@ import { HttpClient } from "effect/http";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import { reportTarget } from "./bridge.ts";
-import { ChannelError, type ChannelAdapter, type ChannelHistoryEntry } from "./Channel.ts";
+import {
+  ChannelError,
+  type ChannelAdapter,
+  type ChannelChart,
+  type ChannelHistoryEntry,
+} from "./Channel.ts";
 import * as ChannelBridge from "./ChannelBridge.ts";
 import { CHANNELS } from "./registry.ts";
 
@@ -16,6 +21,9 @@ export { ChannelError } from "./Channel.ts";
 
 /** The most a task may say in its conversation at once. */
 const SAY_LIMIT = 3000;
+
+/** Charts a post can carry; Slack draws at most two per message. */
+const CHART_LIMIT = 2;
 
 export interface ChannelsShape {
   /** Posts the router's reply where a channel message came from, named by the `ref` it carried. */
@@ -27,6 +35,8 @@ export interface ChannelsShape {
   readonly proposed: (ref: string) => Effect.Effect<void, ChannelError>;
   /** Posts a task's short answer in the conversation the user asked for it in, and nowhere else. */
   readonly say: (threadId: ThreadId, text: string) => Effect.Effect<void, ChannelError>;
+  /** Attaches a chart to the task's next post, its answer, in the conversation it came from. */
+  readonly chart: (threadId: ThreadId, chart: ChannelChart) => Effect.Effect<void, ChannelError>;
   /** The latest messages of a conversation, for the router to read what came before. */
   readonly read: (
     ref: string,
@@ -73,8 +83,22 @@ export const layer: Layer.Layer<
     /** Posts in a conversation, and marks the user's messages there as handled. */
     const postHandled = Effect.fn("Channels.postHandled")(function* (ref: string, text: string) {
       const adapter = yield* adapterFor(ref);
-      yield* adapter.post(ref, text);
+      yield* adapter.post(ref, { text });
       yield* ChannelBridge.markHandled(state, adapter, ref);
+    });
+    /** The conversation a task came from, where it posts. */
+    const taskConversation = Effect.fn("Channels.taskConversation")(function* (threadId: ThreadId) {
+      const shell = yield* threads
+        .getThreadShell(threadId)
+        .pipe(Effect.mapError(() => new ChannelError({ message: "Could not read this thread." })));
+      const ref =
+        shell === null ? null : reportTarget(ChannelBridge.toBridgeThread(shell), prefixes);
+      if (ref === null) {
+        return yield* new ChannelError({
+          message: "This thread did not come from a conversation in a channel.",
+        });
+      }
+      return ref;
     });
     return Channels.of({
       proposed: Effect.fn("Channels.proposed")(function* (ref) {
@@ -100,25 +124,26 @@ export const layer: Layer.Layer<
         yield* postHandled(ref, text);
       }),
       say: Effect.fn("Channels.say")(function* (threadId, text) {
-        const shell = yield* threads
-          .getThreadShell(threadId)
-          .pipe(
-            Effect.mapError(() => new ChannelError({ message: "Could not read this thread." })),
-          );
-        const ref =
-          shell === null ? null : reportTarget(ChannelBridge.toBridgeThread(shell), prefixes);
-        if (ref === null) {
-          return yield* new ChannelError({
-            message: "This thread did not come from the user's message in a channel.",
-          });
-        }
+        const ref = yield* taskConversation(threadId);
         if (text.length > SAY_LIMIT) {
           return yield* new ChannelError({
             message: `Keep it under ${SAY_LIMIT} characters; the rest belongs in your result.`,
           });
         }
         const adapter = yield* adapterFor(ref);
-        yield* adapter.post(ref, text);
+        yield* adapter.post(ref, { text });
+      }),
+      chart: Effect.fn("Channels.chart")(function* (threadId, chart) {
+        yield* taskConversation(threadId);
+        const problem = chartProblem(chart);
+        if (problem !== null) return yield* new ChannelError({ message: problem });
+        const charts = state.charts.get(threadId) ?? [];
+        if (charts.length >= CHART_LIMIT) {
+          return yield* new ChannelError({
+            message: `Your answer already carries ${CHART_LIMIT} charts, the most it can show.`,
+          });
+        }
+        state.charts.set(threadId, [...charts, chart]);
       }),
       read: Effect.fn("Channels.read")(function* (ref, limit) {
         const adapter = yield* adapterFor(ref);
@@ -127,3 +152,46 @@ export const layer: Layer.Layer<
     });
   }),
 );
+
+/** Why a chart cannot be drawn, by Slack's limits on its data visualization block; null if it can. */
+export function chartProblem(chart: ChannelChart): string | null {
+  const long = (text: string, max: number) => [...text].length > max;
+  if (chart.title.trim() === "" || long(chart.title, 50)) {
+    return "A chart's title must be 1 to 50 characters.";
+  }
+  if (chart.kind === "pie") {
+    if (chart.segments.length < 1 || chart.segments.length > 12) {
+      return "A pie chart has 1 to 12 segments.";
+    }
+    if (chart.segments.some((segment) => long(segment.label, 20) || !(segment.value > 0))) {
+      return "Each segment needs a label of at most 20 characters and a value above 0.";
+    }
+    return null;
+  }
+  if (chart.categories.length < 1 || chart.categories.length > 20) {
+    return "A chart has 1 to 20 categories.";
+  }
+  if (chart.categories.some((category) => long(category, 20))) {
+    return "Each category is at most 20 characters.";
+  }
+  if (new Set(chart.categories).size !== chart.categories.length) {
+    return "Categories must be different from each other.";
+  }
+  if (chart.series.length < 1 || chart.series.length > 12) return "A chart has 1 to 12 series.";
+  if (new Set(chart.series.map((series) => series.name)).size !== chart.series.length) {
+    return "Series names must be different from each other.";
+  }
+  for (const series of chart.series) {
+    if (long(series.name, 20)) return "Each series name is at most 20 characters.";
+    if (series.values.length !== chart.categories.length) {
+      return `Series "${series.name}" needs exactly one value per category.`;
+    }
+  }
+  if (
+    (chart.xLabel !== undefined && long(chart.xLabel, 50)) ||
+    (chart.yLabel !== undefined && long(chart.yLabel, 50))
+  ) {
+    return "Axis labels are at most 50 characters.";
+  }
+  return null;
+}

@@ -6,7 +6,7 @@ import * as NodeWS from "@effect/platform-node/NodeWS";
 
 /**
  * A stand-in for Slack, for tests and for trying super-t3 without a Slack app: the Web API methods
- * the adapter calls, Socket Mode over a local WebSocket, and a control API that writes and clicks as
+ * the adapter calls, Socket Mode over a local WebSocket, and a control API that writes and presses Stop as
  * a person would. Its page at `/` shows the conversations as they change.
  *
  * Point super-t3 at it with `T3_SLACK_API_URL=<url>/api` and any tokens.
@@ -47,24 +47,11 @@ export interface MockSlack {
     readonly threadTs?: string;
     readonly dm?: boolean;
   }) => string;
-  /** A person clicks a button on a message; returns the click's trigger id. */
-  readonly click: (input: {
-    readonly user: string;
-    readonly channel: string;
-    readonly ts: string;
-    readonly actionId: string;
-  }) => string;
-  /** A person sends the form a click opened. */
   /** A person presses Stop on an agent session in Slack's agent panel. */
   readonly stop: (input: {
     readonly user: string;
     readonly channel: string;
     readonly threadTs: string;
-  }) => void;
-  readonly submit: (input: {
-    readonly user: string;
-    readonly triggerId: string;
-    readonly text: string;
   }) => void;
   /** Waits until `check` holds, polling the recorded state. */
   readonly until: <A>(check: () => A | undefined | null | false, timeoutMs?: number) => Promise<A>;
@@ -83,7 +70,6 @@ const NAMES: Record<string, string> = {
 export function startMockSlack(options: { readonly port?: number } = {}): Promise<MockSlack> {
   const calls: Array<MockCall> = [];
   const messages: Array<MockMessage> = [];
-  const views = new Map<string, Record<string, unknown>>();
   const statuses = new Map<string, string>();
   const sockets = new Set<NodeWS.WebSocket>();
   // Seeded from the wall clock, like Slack, so a restarted mock never repeats a message id.
@@ -126,43 +112,10 @@ export function startMockSlack(options: { readonly port?: number } = {}): Promis
     return ts;
   };
 
-  const click: MockSlack["click"] = ({ user, channel, ts, actionId }) => {
-    const message = find(channel, ts);
-    const button = (message?.blocks ?? [])
-      .flatMap((block) =>
-        block.type === "actions" ? (block.elements as Array<Record<string, unknown>>) : [],
-      )
-      .find((element) => element.action_id === actionId);
-    if (button === undefined) throw new Error(`No ${actionId} button on ${channel}/${ts}`);
-    const triggerId = `trigger-${++seq}`;
-    emit("interactive", {
-      type: "block_actions",
-      user: { id: user },
-      trigger_id: triggerId,
-      container: { channel_id: channel, message_ts: ts },
-      actions: [{ action_id: actionId, value: button.value }],
-    });
-    return triggerId;
-  };
-
   const stop: MockSlack["stop"] = ({ user, channel, threadTs }) => {
     emit("events_api", {
       team_id: MOCK_TEAM,
       event: { type: "agent_session_stopped", user, channel, thread_ts: threadTs },
-    });
-  };
-
-  const submit: MockSlack["submit"] = ({ user, triggerId, text }) => {
-    const view = views.get(triggerId);
-    if (view === undefined) throw new Error(`No form was opened for ${triggerId}`);
-    emit("interactive", {
-      type: "view_submission",
-      user: { id: user },
-      view: {
-        callback_id: view.callback_id,
-        private_metadata: view.private_metadata,
-        state: { values: { change: { text: { value: text } } } },
-      },
     });
   };
 
@@ -236,9 +189,6 @@ export function startMockSlack(options: { readonly port?: number } = {}): Promis
       case "agents.sessions.setStatus":
         statuses.set(`${String(args.channel_id)}:${String(args.thread_ts)}`, String(args.status));
         return { ok: true };
-      case "views.open":
-        views.set(String(args.trigger_id), args.view as Record<string, unknown>);
-        return { ok: true };
       default:
         return { ok: false, error: "unknown_method" };
     }
@@ -253,7 +203,7 @@ export function startMockSlack(options: { readonly port?: number } = {}): Promis
   };
 
   /**
-   * The control API writes and clicks as the user, so a page on another site must not reach it: a
+   * The control API writes and presses Stop as the user, so a page on another site must not reach it: a
    * browser sends its origin, and a JSON body forces a preflight this server never answers.
    */
   const isOwnPost = (request: NodeHttp.IncomingMessage) => {
@@ -306,21 +256,14 @@ export function startMockSlack(options: { readonly port?: number } = {}): Promis
             }),
           );
         }
-        const control = ["/_mock/say", "/_mock/click", "/_mock/submit", "/_mock/stop"];
+        const control = ["/_mock/say", "/_mock/stop"];
         if (control.includes(url.pathname) && !isOwnPost(request)) {
           return send(response, 403, { ok: false, error: "forbidden" });
         }
         // What the control API acts on comes only from its JSON body.
         if (url.pathname === "/_mock/say") return send(response, 200, { ts: say(body as never) });
-        if (url.pathname === "/_mock/click") {
-          return send(response, 200, { triggerId: click(body as never) });
-        }
         if (url.pathname === "/_mock/stop") {
           stop(body as never);
-          return send(response, 200, { ok: true });
-        }
-        if (url.pathname === "/_mock/submit") {
-          submit(body as never);
           return send(response, 200, { ok: true });
         }
         if (url.pathname === "/_mock/state") {
@@ -361,8 +304,6 @@ export function startMockSlack(options: { readonly port?: number } = {}): Promis
         statuses,
         stop,
         say,
-        click,
-        submit,
         until: async (check, timeoutMs = 10_000) => {
           const deadline = Date.now() + timeoutMs;
           while (Date.now() < deadline) {
@@ -423,7 +364,7 @@ function blocks(m) {
     if (b.type === "markdown") return '<div class="md">' + esc(b.text) + '</div>';
     if (b.type === "rich_text") return '<div class="md">' + esc(b.elements[0].elements[0].text) + '</div>';
     if (b.type === "context") return '<div class="ctx">' + esc(b.elements[0].text) + '</div>';
-    if (b.type === "actions") return '<div>' + b.elements.map((e) => '<button class="' + esc(e.style) + '" data-a="' + esc(e.action_id) + '" data-c="' + esc(m.channel) + '" data-t="' + esc(m.ts) + '">' + esc(e.text.text) + '</button>').join("") + '</div>';
+    if (b.type === "data_visualization") return '<div class="md">📊 ' + esc(b.title) + ' (' + esc(b.chart.type) + ' chart)</div>';
     return "";
   }).join("");
 }
@@ -436,15 +377,6 @@ async function render() {
       '<div class="msg ' + (m.threadTs && m.threadTs !== m.ts ? "reply" : "") + '"><span class="who ' + (m.user === "UBOT" ? "bot" : "") + '">' + (m.user === "UBOT" ? "super-t3" : esc(m.user)) + '</span>' + blocks(m) +
       (m.reactions.length ? '<div class="reactions">' + m.reactions.map((r) => reacts[r] ?? r).join(" ") + '</div>' : "") + '</div>').join("") + '</section>').join("");
 }
-document.addEventListener("click", async (e) => {
-  const b = e.target.closest("button[data-a]");
-  if (!b) return;
-  const { triggerId } = await (await fetch("/_mock/click", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ user: "UME", channel: b.dataset.c, ts: b.dataset.t, actionId: b.dataset.a }) })).json();
-  if (b.dataset.a.endsWith("change")) {
-    const text = prompt("What should change?");
-    if (text) await fetch("/_mock/submit", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ user: "UME", triggerId, text }) });
-  }
-});
 document.getElementById("say").addEventListener("submit", async (e) => {
   e.preventDefault();
   const text = e.target.text.value;

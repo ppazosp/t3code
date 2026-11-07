@@ -167,6 +167,13 @@ export const layer = Layer.effect(
         const row = yield* originOf(task.id);
         const tags =
           row === null ? [] : [row.origin, ...(row.from_user === 1 ? [FROM_USER_TAG] : [])];
+        // The title first: the worker posts in its conversation as soon as it is tagged.
+        yield* threads.dispatch({
+          type: "thread.metadata.update",
+          commandId: CommandId.make(`proposal:title:${threadId}`),
+          threadId,
+          title: task.title,
+        });
         for (const tag of tags) {
           yield* threads.dispatch({
             type: "thread.tag.set",
@@ -176,12 +183,6 @@ export const layer = Layer.effect(
             tagged: true,
           });
         }
-        yield* threads.dispatch({
-          type: "thread.metadata.update",
-          commandId: CommandId.make(`proposal:title:${threadId}`),
-          threadId,
-          title: task.title,
-        });
         yield* sql`DELETE FROM super_t3_proposal_origins WHERE task_id = ${task.id}`;
         yield* scheduled.delete({ id: task.id });
         yield* threads.dispatch({

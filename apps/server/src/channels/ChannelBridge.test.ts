@@ -3,11 +3,16 @@ import type { OrchestrationV2DomainEvent } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
 
-import type { ChannelAdapter, ChannelEvent, ChannelMessage, Progress } from "./Channel.ts";
+import type {
+  ChannelAdapter,
+  ChannelChart,
+  ChannelEvent,
+  ChannelHistoryEntry,
+  ChannelMessage,
+} from "./Channel.ts";
 import * as ChannelBridge from "./ChannelBridge.ts";
 
-const ORIGIN = "slack:D1:1700000000.000100";
-const PLAN = JSON.stringify(["plan", "task", "plan-1"]);
+const ORIGIN = "slack:C1:1700000000.000100";
 
 const thread = (id: string, fields: Record<string, unknown> = {}) => ({
   id,
@@ -29,73 +34,52 @@ const runEvent = (type: "run.created" | "run.updated", status: string, runId = "
 const itemEvent = (payload: Record<string, unknown>, runId = "run:1") =>
   ({ type: "turn-item.updated", threadId: "task", runId, payload }) as never;
 
-const message = (ref: string, fields: Partial<ChannelMessage> = {}): ChannelEvent => ({
+const message = (id: string, fields: Partial<ChannelMessage> = {}): ChannelEvent => ({
   type: "message",
-  id: `slack:D1:${ref.slice(-4)}${fields.text ?? ""}`,
-  ref,
+  id,
+  ref: ORIGIN,
   fromUser: true,
   direct: true,
-  where: "dm",
+  where: "#eng",
   author: "you",
-  text: "also handle CSV",
+  text: "address Miguel's feedback",
   ...fields,
 });
 
-const answer = (fields: Partial<Extract<ChannelEvent, { type: "answer" }>> = {}): ChannelEvent => ({
-  type: "answer",
-  askId: PLAN,
-  message: "slack:D1:1700000000.000300",
-  fromUser: true,
-  decision: "approve",
-  text: "",
-  ...fields,
+const entry = (id: string, author: string, text: string, bot = false): ChannelHistoryEntry => ({
+  id,
+  author,
+  fromUser: author === "you",
+  bot,
+  text,
 });
-
-const activePlan = {
-  kind: "proposed_plan",
-  id: "plan-1",
-  runId: "run:1",
-  status: "active",
-  markdown: "# Plan\n- do it",
-};
 
 /** Runs the bridge over scripted channel events and T3 events, recording what it does. */
 function runBridge(input: {
   readonly channel?: ReadonlyArray<ChannelEvent>;
   readonly events?: ReadonlyArray<OrchestrationV2DomainEvent>;
   readonly existing?: ReadonlyArray<ReturnType<typeof thread>>;
-  readonly plans?: ReadonlyArray<typeof activePlan>;
+  readonly history?: ReadonlyArray<ChannelHistoryEntry>;
   readonly state?: ChannelBridge.BridgeState;
 }) {
-  const posts: Array<{ ref: string; text: string }> = [];
-  const progress: Array<{ ref: string; message: string | null; progress: Progress }> = [];
+  const posts: Array<{ ref: string; text: string; charts: ReadonlyArray<ChannelChart> }> = [];
   const sent: Array<{ threadId: string; text: string }> = [];
   const marks: Array<[string, string]> = [];
   const statuses: Array<[string, string]> = [];
-  const asks: Array<{ ref: string; askId: string; text: string }> = [];
-  const closed: Array<string> = [];
   const dispatched: Array<Record<string, unknown>> = [];
   const stopped: Array<string> = [];
   const adapter: ChannelAdapter = {
     name: "slack",
     prefix: "slack:",
     events: Stream.fromIterable(input.channel ?? []),
-    post: (ref, text) => Effect.sync(() => void posts.push({ ref, text })),
+    post: (ref, post) =>
+      Effect.sync(() => {
+        posts.push({ ref, text: post.text, charts: post.charts ?? [] });
+        return `slack:C1:post-${posts.length}`;
+      }),
     mark: (id, mark) => Effect.sync(() => void marks.push([id, mark])),
     status: (ref, status) => Effect.sync(() => void statuses.push([ref, status])),
-    read: () => Effect.succeed([]),
-    fits: (text) => text.length < 1000,
-    askApproval: (call) =>
-      Effect.sync(() => {
-        asks.push(call);
-        return "slack:D1:1700000000.000300";
-      }),
-    closeApproval: (call) => Effect.sync(() => void closed.push(call.outcome)),
-    showProgress: (call) =>
-      Effect.sync(() => {
-        progress.push(call);
-        return call.message ?? "slack:D1:1700000000.000200";
-      }),
+    read: () => Effect.succeed(input.history ?? []),
   };
   const threads = {
     listProjectThreads: () =>
@@ -109,231 +93,187 @@ function runBridge(input: {
       }),
     dispatch: (command: Record<string, unknown>) =>
       Effect.sync(() => void dispatched.push(command)),
-    getThreadProjection: () =>
-      Effect.succeed({
-        thread: { id: "task", projectId: "project:1" },
-        runs: [{ id: "run:1", status: "completed" }],
-        plans: input.plans ?? [],
-      }),
   } as never;
   const engine = { streamDomainEvents: Stream.fromIterable(input.events ?? []) } as never;
   const state = input.state ?? ChannelBridge.makeState();
   return ChannelBridge.run({ adapters: [adapter], threads, engine, state }).pipe(
-    Effect.as({ posts, progress, sent, marks, statuses, asks, closed, dispatched, stopped, state }),
+    Effect.as({ posts, sent, marks, statuses, dispatched, stopped, state }),
   );
 }
 
-const userTask = thread("task", { tags: [ORIGIN, "from-you"], interactionMode: "plan" });
+const task = thread("task", { tags: [ORIGIN] });
 
 describe("ChannelBridge", () => {
-  it.effect("reports each run of a worker the user asked for, with its steps and result", () =>
+  it.effect("says once that a task started, then posts each run's answer where it came from", () =>
     Effect.gen(function* () {
-      const { posts, progress } = yield* runBridge({
+      const { posts, statuses } = yield* runBridge({
         events: [
           // An accepted proposal's worker starts before it is tagged with where it came from.
           threadEvent({ tags: [] }),
           runEvent("run.created", "running"),
-          threadEvent({ tags: [ORIGIN, "from-you"] }),
-          threadEvent({ tags: [ORIGIN, "from-you"], title: "Add CSV export" }),
-          itemEvent({
-            type: "todo_list",
-            steps: [{ id: "s1", text: "Write the fix", status: "running" }],
-          }),
-          itemEvent({ type: "assistant_message", text: "Fixed and pushed.", streaming: false }),
+          threadEvent({ tags: [ORIGIN], title: "Add CSV export" }),
+          itemEvent({ type: "assistant_message", text: "Working on it", streaming: true }),
+          itemEvent({ type: "assistant_message", text: "Done: **CSV** works.", streaming: false }),
           runEvent("run.updated", "completed"),
+          runEvent("run.created", "running", "run:2"),
+          runEvent("run.updated", "interrupted", "run:2"),
         ],
       });
-      assert.deepStrictEqual(posts, []);
       assert.deepStrictEqual(
-        progress.map((call) => [
-          call.message,
-          call.progress.title,
-          call.progress.steps.length,
-          call.progress.finished,
-        ]),
+        posts.map((post) => post.text),
         [
-          [null, "Fix the export", 0, null],
-          ["slack:D1:1700000000.000200", "Add CSV export", 0, null],
-          ["slack:D1:1700000000.000200", "Add CSV export", 1, null],
-          [
-            "slack:D1:1700000000.000200",
-            "Add CSV export",
-            1,
-            { outcome: "completed", result: "Fixed and pushed." },
-          ],
+          "🛠️ **Add CSV export**\nI'm working on it. I'll post the result here, or ask if I need something. Tag me to add anything.",
+          "Done: **CSV** works.",
+          "Stopped.",
         ],
       );
+      assert.deepStrictEqual(statuses, [
+        [ORIGIN, "working"],
+        [ORIGIN, "idle"],
+        [ORIGIN, "working"],
+        [ORIGIN, "idle"],
+      ]);
     }),
   );
 
-  it.effect("never reports a worker proposed from someone else's message", () =>
+  it.effect("posts a planning run's plan, with any charts, and waits for the user", () =>
     Effect.gen(function* () {
-      const { progress } = yield* runBridge({
+      const chart: ChannelChart = {
+        kind: "pie",
+        title: "Orders",
+        segments: [{ label: "Empty", value: 3 }],
+      };
+      const state = ChannelBridge.makeState();
+      state.charts.set("task", [chart]);
+      const { posts, statuses } = yield* runBridge({
+        state,
+        existing: [thread("task", { tags: [ORIGIN], interactionMode: "plan" })],
         events: [
-          threadEvent({ tags: [ORIGIN] }),
           runEvent("run.created", "running"),
+          itemEvent({ type: "assistant_message", text: "Let me look.", streaming: false }),
+          itemEvent({ type: "proposed_plan", markdown: "# Plan\n- do it", streaming: false }),
           runEvent("run.updated", "completed"),
         ],
       });
-      assert.deepStrictEqual(progress, []);
+      assert.deepStrictEqual(posts.at(-1), {
+        ref: ORIGIN,
+        text: "# Plan\n- do it",
+        charts: [chart],
+      });
+      assert.isFalse(state.charts.has("task"));
+      assert.deepStrictEqual(statuses.at(-1), [ORIGIN, "waiting"]);
     }),
   );
 
-  it.effect(
-    "sends the user's request where one task came from to that task, and the rest to the router",
-    () =>
-      Effect.gen(function* () {
-        const before = ChannelBridge.makeState();
-        before.proposed.add(ORIGIN);
-        const { sent, marks, state } = yield* runBridge({
-          state: before,
-          existing: [thread("router", { tags: ["router"] }), thread("task", { tags: [ORIGIN] })],
-          channel: [
-            message(ORIGIN),
-            message(ORIGIN, { fromUser: false, author: "@U2", text: "me too" }),
-            // In a channel, a reply without a mention is information for the router.
-            message(ORIGIN, { direct: false, text: "fyi" }),
-            message("slack:D1:1700000000.000900"),
-          ],
-        });
-        assert.deepStrictEqual(
-          sent.map((call) => call.threadId),
-          ["task", "router", "router", "router"],
-        );
-        assert.include(sent[0]!.text, "The user wrote in your Slack thread:\n> also handle CSV");
-        assert.include(sent[0]!.text, "channel_say");
-        assert.match(sent[3]!.text, /^\[slack dm from you ref=slack:D1:1700000000\.000900\]/u);
-        // The task took its message at once; the router's request waits for an answer.
-        assert.deepStrictEqual(marks, [
-          ["slack:D1:0100", "seen"],
-          ["slack:D1:0100", "done"],
-          ["slack:D1:0900", "seen"],
-        ]);
-        assert.deepStrictEqual(state.waiting.get("slack:D1:1700000000.000900"), ["slack:D1:0900"]);
-        assert.isTrue(state.userRefs.has(ORIGIN));
-        // The user wrote again, so the router may answer there again after a proposal.
-        assert.isFalse(state.proposed.has(ORIGIN));
-      }),
-  );
-
-  it.effect(
-    "stops every task from the conversation when the user says stop, without the router",
-    () =>
-      Effect.gen(function* () {
-        const { sent, stopped, marks } = yield* runBridge({
-          existing: [
-            thread("router", { tags: ["router"] }),
-            thread("task", { tags: [ORIGIN] }),
-            thread("other", { tags: [ORIGIN] }),
-          ],
-          channel: [
-            message(ORIGIN, { text: "Stop!" }),
-            // Someone else, or the user without a mention, cannot stop work.
-            message(ORIGIN, { text: "stop", fromUser: false }),
-            message(ORIGIN, { text: "stop", direct: false }),
-          ],
-        });
-        assert.deepStrictEqual(stopped, ["task", "other"]);
-        assert.deepStrictEqual(
-          sent.map((call) => call.threadId),
-          ["router", "router"],
-        );
-        assert.deepStrictEqual(marks.slice(0, 2), [
-          ["slack:D1:0100Stop!", "seen"],
-          ["slack:D1:0100Stop!", "done"],
-        ]);
-      }),
-  );
-
-  it.effect("posts the plan a reported run ended with, for the user to approve", () =>
+  it.effect("passes the thread to a task only with the user's tag, and only what is new", () =>
     Effect.gen(function* () {
-      const { asks } = yield* runBridge({
-        existing: [userTask],
-        plans: [activePlan],
-        events: [runEvent("run.created", "running"), runEvent("run.updated", "completed")],
-      });
-      assert.deepStrictEqual(
-        asks.map((ask) => [ask.ref, ask.askId, ask.text]),
-        [[ORIGIN, PLAN, "# Plan\n- do it"]],
-      );
-    }),
-  );
-
-  it.effect("implements the plan on the user's approval, once", () =>
-    Effect.gen(function* () {
-      const { dispatched, closed } = yield* runBridge({
-        existing: [userTask],
-        plans: [activePlan],
-        channel: [answer({ fromUser: false }), answer(), answer()],
-      });
-      assert.deepStrictEqual(
-        dispatched.map((command) => command.type),
-        ["thread.interaction-mode.set", "message.dispatch"],
-      );
-      assert.deepStrictEqual(dispatched[1]!.sourcePlanRef, { threadId: "task", planId: "plan-1" });
-      assert.match(String(dispatched[1]!.text), /^PLEASE IMPLEMENT THIS PLAN:\n# Plan/u);
-      assert.strictEqual(closed.length, 1);
-    }),
-  );
-
-  it.effect("sends the user's changes to the worker, and ignores a plan no longer waiting", () =>
-    Effect.gen(function* () {
-      const changed = yield* runBridge({
-        existing: [userTask],
-        plans: [activePlan],
-        channel: [answer({ decision: "change", text: "use CSV too" })],
-      });
-      assert.include(changed.sent[0]!.text, "> use CSV too");
-      assert.deepStrictEqual(changed.closed, ["You asked for changes: use CSV too"]);
-
-      const stale = yield* runBridge({
-        existing: [userTask],
-        plans: [{ ...activePlan, status: "superseded" }],
-        channel: [answer()],
-      });
-      assert.deepStrictEqual([stale.dispatched, stale.closed], [[], []]);
-    }),
-  );
-
-  it.effect(
-    "shows the router working on the user's request, and a report's run until it ends",
-    () =>
-      Effect.gen(function* () {
-        const asked = yield* runBridge({ channel: [message("slack:D1:1700000000.000900")] });
-        assert.deepStrictEqual(asked.statuses, [["slack:D1:1700000000.000900", "working"]]);
-
-        const reported = yield* runBridge({
-          existing: [userTask],
-          plans: [activePlan],
-          events: [runEvent("run.created", "running"), runEvent("run.updated", "completed")],
-        });
-        // The run ended with a plan to approve, so the conversation waits for the user.
-        assert.deepStrictEqual(reported.statuses, [
-          [ORIGIN, "working"],
-          [ORIGIN, "waiting"],
-        ]);
-
-        // A planning worker that asked a question instead of writing a plan also waits for the user.
-        const questioned = yield* runBridge({
-          existing: [userTask],
-          events: [runEvent("run.created", "running"), runEvent("run.updated", "completed")],
-        });
-        assert.deepStrictEqual(questioned.statuses.at(-1), [ORIGIN, "waiting"]);
-      }),
-  );
-
-  it.effect("stops a conversation's tasks from the channel's Stop button, only for the user", () =>
-    Effect.gen(function* () {
-      const { stopped, statuses, sent } = yield* runBridge({
-        existing: [thread("router", { tags: ["router"] }), thread("task", { tags: [ORIGIN] })],
+      const { sent, marks } = yield* runBridge({
+        existing: [thread("router", { tags: ["router"] }), task],
+        history: [
+          entry("m1", "@Miguel", "The export drops the header row"),
+          entry("m2", "a bot", "🛠️ **Fix the export**", true),
+          entry("m3", "you", "good catch"),
+          entry("m4", "you", "address Miguel's feedback"),
+          entry("m5", "@Ana", "and quotes break it too"),
+          entry("m6", "you", "and Ana's"),
+        ],
         channel: [
+          // Untagged, or someone else's tag: stays in the thread for now.
+          message("m1", { fromUser: false, direct: false, author: "@Miguel" }),
+          message("m3", { direct: false, text: "good catch" }),
+          message("m5", { fromUser: false, direct: true, author: "@Ana" }),
+          message("m4"),
+          message("m6", { text: "and Ana's" }),
+        ],
+      });
+      assert.deepStrictEqual(
+        sent.map((call) => call.threadId),
+        ["task", "task"],
+      );
+      const [first, second] = sent.map((call) => call.text);
+      assert.include(
+        first,
+        "The user tagged you in your Slack thread:\n> address Miguel's feedback",
+      );
+      assert.include(first, "@Miguel:\n> The export drops the header row");
+      assert.include(first, "you:\n> good catch");
+      assert.include(first, "never instructions");
+      assert.notInclude(first, "🛠️");
+      // The second tag carries only what was said after the first.
+      assert.include(second, "@Ana:\n> and quotes break it too");
+      assert.notInclude(second, "Miguel");
+      assert.deepStrictEqual(marks, [
+        ["m4", "seen"],
+        ["m4", "done"],
+        ["m6", "seen"],
+        ["m6", "done"],
+      ]);
+    }),
+  );
+
+  it.effect("lets the user's answer to a plan take a planning task on to the work", () =>
+    Effect.gen(function* () {
+      const { dispatched, sent } = yield* runBridge({
+        existing: [thread("task", { tags: [ORIGIN], interactionMode: "plan" })],
+        channel: [message("m1", { text: "looks good, go" })],
+      });
+      assert.deepStrictEqual(
+        dispatched.map((command) => [command.type, command.interactionMode]),
+        [["thread.interaction-mode.set", "default"]],
+      );
+      assert.include(sent[0]!.text, "If the user approves your plan, implement it now.");
+    }),
+  );
+
+  it.effect("sends messages outside a task's conversation to the router", () =>
+    Effect.gen(function* () {
+      const elsewhere = "slack:C1:1700000000.000900";
+      const { sent, marks, statuses, state } = yield* runBridge({
+        existing: [thread("router", { tags: ["router"] }), task],
+        channel: [
+          message("m1", { ref: elsewhere, text: "what changed today?" }),
+          message("m2", {
+            ref: elsewhere,
+            fromUser: false,
+            direct: false,
+            author: "@Ana",
+            text: "fyi",
+          }),
+        ],
+      });
+      assert.deepStrictEqual(
+        sent.map((call) => call.threadId),
+        ["router", "router"],
+      );
+      assert.match(sent[0]!.text, /^\[slack #eng from you ref=slack:C1:1700000000\.000900\]/u);
+      assert.deepStrictEqual(marks, [["m1", "seen"]]);
+      assert.deepStrictEqual(statuses, [[elsewhere, "working"]]);
+      assert.deepStrictEqual(state.waiting.get(elsewhere), ["m1"]);
+      assert.isTrue(state.userRefs.has(elsewhere));
+    }),
+  );
+
+  it.effect("stops a conversation's tasks on the user's stop, by message or Stop button", () =>
+    Effect.gen(function* () {
+      const { stopped, sent, statuses } = yield* runBridge({
+        existing: [
+          thread("router", { tags: ["router"] }),
+          task,
+          thread("other", { tags: [ORIGIN] }),
+        ],
+        channel: [
+          message("m1", { text: "Stop!" }),
+          message("m2", { text: "stop", fromUser: false, author: "@Ana" }),
           { type: "stop", ref: ORIGIN, fromUser: false },
           { type: "stop", ref: ORIGIN, fromUser: true },
         ],
       });
-      assert.deepStrictEqual(stopped, ["task"]);
-      assert.deepStrictEqual(statuses, [[ORIGIN, "idle"]]);
+      assert.deepStrictEqual(stopped, ["task", "other", "task", "other"]);
       assert.deepStrictEqual(sent, []);
+      assert.deepStrictEqual(statuses, [
+        [ORIGIN, "idle"],
+        [ORIGIN, "idle"],
+      ]);
     }),
   );
 

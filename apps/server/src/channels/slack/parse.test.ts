@@ -2,12 +2,8 @@ import { assert, describe, it } from "@effect/vitest";
 import * as Option from "effect/Option";
 
 import {
-  APPROVE_ACTION,
-  CHANGE_ACTION,
-  CHANGE_FORM,
   escapeSlackText,
   parseSlackRef,
-  readSlackInteraction,
   readSlackMessage,
   readSlackOutsider,
   readSlackStop,
@@ -101,59 +97,5 @@ describe("refs and replies", () => {
     assert.strictEqual(escapeSlackText("<!channel> & <@U1>"), "&lt;!channel&gt; &amp; &lt;@U1&gt;");
     // Markdown links stay text, and a backslash cannot undo that.
     assert.strictEqual(slackMarkdown("[x](http://a) \\[y]"), "\\[x](http://a) \\\\\\[y]");
-  });
-});
-
-describe("readSlackInteraction", () => {
-  const click = (action: string, user = "UME") => ({
-    type: "block_actions",
-    user: { id: user },
-    trigger_id: "trigger-1",
-    container: { channel_id: "D1", message_ts: "1700000000.000300" },
-    actions: [{ action_id: action, value: "plan:t:p" }],
-  });
-
-  it("reads Approve as an answer, and Change as a form to open", () => {
-    assert.deepStrictEqual(readSlackInteraction(click(APPROVE_ACTION), "UME"), {
-      type: "answer",
-      answer: {
-        askId: "plan:t:p",
-        message: "slack:D1:1700000000.000300",
-        fromUser: true,
-        decision: "approve",
-        text: "",
-      },
-    });
-    assert.include(readSlackInteraction(click(APPROVE_ACTION, "UX"), "UME")!, { type: "answer" });
-    const form = readSlackInteraction(click(CHANGE_ACTION), "UME");
-    assert.strictEqual(form?.type, "openForm");
-    assert.isNull(readSlackInteraction({ ...click("other"), actions: [] }, "UME"));
-  });
-
-  it("reads the sent Change form as an answer with what to change", () => {
-    const form = readSlackInteraction(click(CHANGE_ACTION), "UME");
-    if (form?.type !== "openForm") throw new Error("expected a form");
-    const sent = readSlackInteraction(
-      {
-        type: "view_submission",
-        user: { id: "UME" },
-        view: {
-          callback_id: CHANGE_FORM,
-          private_metadata: form.context,
-          state: { values: { change: { text: { value: " add CSV " } } } },
-        },
-      },
-      "UME",
-    );
-    assert.deepStrictEqual(sent, {
-      type: "answer",
-      answer: {
-        askId: "plan:t:p",
-        message: "slack:D1:1700000000.000300",
-        fromUser: true,
-        decision: "change",
-        text: "add CSV",
-      },
-    });
   });
 });

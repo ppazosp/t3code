@@ -5,8 +5,8 @@ import {
   isStop,
   originOf,
   reportTarget,
+  resultText,
   routerMessageText,
-  taskForMessage,
   type BridgeThread,
 } from "./bridge.ts";
 
@@ -36,32 +36,18 @@ describe("bridge", () => {
     assert.isNull(originOf(thread("a", { tags: ["proposal"] }), ["slack:"]));
   });
 
-  it("answers a task only when exactly one live task came from that conversation", () => {
-    const task = thread("task", { tags: [ORIGIN] });
-    assert.strictEqual(taskForMessage(reply, [task], ["slack:"]), task);
-    assert.isNull(taskForMessage({ ...reply, fromUser: false }, [task], ["slack:"]));
-    assert.isNull(taskForMessage({ ...reply, direct: false }, [task], ["slack:"]));
-    assert.isNull(taskForMessage(reply, [task, thread("other", { tags: [ORIGIN] })], ["slack:"]));
-    assert.isNull(
-      taskForMessage(reply, [thread("old", { tags: [ORIGIN], archived: true })], ["slack:"]),
-    );
-    assert.isNull(
-      taskForMessage(reply, [thread("router", { tags: ["router", ORIGIN] })], ["slack:"]),
-    );
+  it("posts a task where its proposal came from, whoever wrote the message there", () => {
+    assert.strictEqual(reportTarget(thread("t", { tags: [ORIGIN] }), ["slack:"]), ORIGIN);
+    assert.isNull(reportTarget(thread("t", { tags: [ORIGIN], archived: true }), ["slack:"]));
+    assert.isNull(reportTarget(thread("t", { tags: ["router", ORIGIN] }), ["slack:"]));
+    assert.isNull(reportTarget(thread("t"), ["slack:"]));
   });
 
-  it("reports a task's runs only once approved, and only where the user asked for it", () => {
-    assert.strictEqual(
-      reportTarget(thread("t", { tags: [ORIGIN, "from-you"] }), ["slack:"]),
-      ORIGIN,
-    );
-    // A task from someone else's message in a watched channel never posts in their thread.
-    assert.isNull(reportTarget(thread("t", { tags: [ORIGIN] }), ["slack:"]));
-    assert.isNull(reportTarget(thread("t", { tags: ["proposal", ORIGIN] }), ["slack:"]));
-    assert.isNull(
-      reportTarget(thread("t", { tags: [ORIGIN], interactionMode: "plan" }), ["slack:"]),
-    );
-    assert.isNull(reportTarget(thread("t"), ["slack:"]));
+  it("posts a run's answer, or how it ended without one", () => {
+    assert.strictEqual(resultText("completed", " Done. "), "Done.");
+    assert.isNull(resultText("completed", null));
+    assert.strictEqual(resultText("interrupted", null), "Stopped.");
+    assert.strictEqual(resultText("failed", "Tests broke"), "This failed.\n\nTests broke");
   });
 
   it("reads stop only as the user's own request, with nothing else in it", () => {
