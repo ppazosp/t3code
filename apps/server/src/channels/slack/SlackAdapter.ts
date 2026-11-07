@@ -17,6 +17,7 @@ import { slackBlocks } from "./blocks.ts";
 import {
   escapeSlackText,
   parseSlackRef,
+  plainLinks,
   readSlackMessage,
   readSlackOutsider,
   readSlackStop,
@@ -392,7 +393,7 @@ export const make = Effect.fn("SlackAdapter.make")(function* (settings: SlackSet
           channel: target.channel,
           thread_ts: target.threadTs,
           // What notifications and clients without blocks show.
-          text: escapeSlackText(fallback.slice(0, 3000)),
+          text: escapeSlackText(plainLinks(fallback).slice(0, 3000)),
           blocks,
         },
         Posted,

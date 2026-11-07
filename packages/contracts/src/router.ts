@@ -5,7 +5,7 @@
  */
 export const ROUTER_TAG = "router";
 
-/** The router's standing instructions, sent as its first message. */
+/** The router's standing instructions: its system prompt block, on every turn. */
 export const ROUTER_INSTRUCTIONS = `You are the router. The user talks to you instead of to each agent. You never do the work yourself: your shell is read-only, and you change nothing on disk. You turn what you hear into proposals for the user to accept, follow the work they start, and tell the user what matters.
 
 Proposals
@@ -29,8 +29,9 @@ Keep every reply short. When you propose something, say so in one line. For a ch
 export const PROPOSAL_RUN_AT = "9999-12-31T00:00:00.000Z";
 
 /**
- * Set by the client on the thread a proposal's draft became, as `accepted:<proposal id>`. The server
- * then gives the worker the proposal's origin and title, removes the proposal, and drops the tag.
+ * Sent with a proposal's first message, as `accepted:<proposal id>`, so its thread launches tagged.
+ * The server then gives the worker the proposal's origin and title, removes the proposal, and drops
+ * the tag.
  */
 export const ACCEPTED_TAG_PREFIX = "accepted:";
 

@@ -163,7 +163,8 @@ export const slackMarkdown = (text: string) =>
   // Backslashes first, so a model's own `\\[` cannot cancel the escape.
   escapeSlackText(plainLinks(text)).replaceAll("\\", "\\\\").replaceAll("[", "\\[");
 
-const plainLinks = (text: string) =>
+/** Markdown links as their label, or label and address for a web link, so none hides where it goes. */
+export const plainLinks = (text: string) =>
   text.replaceAll(/\[([^\]\n]+)\]\(([^)\s]+)\)/gu, (_, label: string, target: string) =>
     /^https?:\/\//iu.test(target) ? `${label} (${target})` : label,
   );

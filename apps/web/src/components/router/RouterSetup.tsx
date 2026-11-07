@@ -1,12 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/models";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import {
-  type ModelSelection,
-  ROUTER_INSTRUCTIONS,
-  ROUTER_TAG,
-  type ThreadTag,
-} from "@t3tools/contracts";
+import { type ModelSelection, ROUTER_TAG, type ThreadTag } from "@t3tools/contracts";
 import { ChevronDownIcon, RouteIcon } from "lucide-react";
 import { useState } from "react";
 
@@ -109,7 +104,7 @@ export function RouterSetup({ projects }: { projects: ReadonlyArray<EnvironmentP
             message: {
               messageId: newMessageId(),
               role: "user",
-              text: ROUTER_INSTRUCTIONS,
+              text: "You are my router now. Say hello in one line.",
               attachments: [],
             },
             modelSelection: model.selection,

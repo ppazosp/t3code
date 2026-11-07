@@ -1,4 +1,4 @@
-import { ROUTER_TAG } from "@t3tools/contracts";
+import { ROUTER_INSTRUCTIONS, ROUTER_TAG } from "@t3tools/contracts";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -9,14 +9,15 @@ export function isRouterThread(thread: { readonly tags?: ReadonlyArray<string> |
   return thread.tags?.includes(ROUTER_TAG) === true;
 }
 
-/** The router's T3 tools: read anything, propose tasks, and answer the user in a channel. It starts nothing itself. */
+/**
+ * The router's T3 tools: see which workers there are and what they are doing, propose new ones, and
+ * answer the user in a channel. It starts nothing itself.
+ */
 export const ROUTER_TOOLS: ReadonlyArray<string> = [
   "orchestrator_capabilities",
   "t3_project_list",
-  "t3_project_read",
   "t3_thread_list",
   "t3_thread_read",
-  "t3_thread_search",
   "list_scheduled_tasks",
   "propose_task",
   "channel_reply",
@@ -41,6 +42,7 @@ export const layer: Layer.Layer<RuntimePolicyV2, never, RuntimePolicyV2> = Layer
           approvalPolicy: "never",
           sandboxPolicy: { type: "readOnly" },
           t3ToolAllowlist: ROUTER_TOOLS,
+          instructions: ROUTER_INSTRUCTIONS,
         });
       }),
     });

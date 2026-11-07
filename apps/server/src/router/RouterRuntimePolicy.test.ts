@@ -34,6 +34,9 @@ describe("RouterRuntimePolicy.layer", () => {
       assert.strictEqual(policy.approvalPolicy, "never");
       assert.include(policy.t3ToolAllowlist ?? [], "propose_task");
       assert.notInclude(policy.t3ToolAllowlist ?? [], "t3_thread_launch");
+      assert.notInclude(policy.t3ToolAllowlist ?? [], "t3_thread_search");
+      // Its standing instructions are its system prompt, on every turn.
+      assert.include(policy.instructions, "You are the router.");
     }),
   );
 

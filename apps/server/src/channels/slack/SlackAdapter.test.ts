@@ -91,6 +91,8 @@ describe("SlackAdapter against a mock Slack", () => {
           // Markdown renders, but cannot ping anyone or hide a link.
           { type: "markdown", text: "**Done** &lt;!channel&gt; docs (http://x)" },
         ]);
+        // Notifications show the same text, without a link hiding where it goes.
+        assert.strictEqual(reply.text, "**Done** &lt;!channel&gt; docs (http://x)");
 
         // Files go up to Slack's upload address, then are shared in the same thread.
         const bytes = new Uint8Array([1, 2, 3, 4, 5]);

@@ -43,7 +43,8 @@ You are `UME`; `UMARIA` is someone else. The control API (`POST /_mock/say`, `/_
 The server enforces these limits, whatever the router is told:
 
 - Under Codex, its shell is read-only and never asks for approval. Under other providers, the router runs in "approval-required" mode, so it asks before it edits anything.
-- It gets only these T3 tools: `orchestrator_capabilities`, `t3_project_list`, `t3_project_read`, `t3_thread_list`, `t3_thread_read`, `t3_thread_search`, `list_scheduled_tasks`, `propose_task`, `channel_reply` and `channel_read`. They run without asking. Codex shows it only these, and T3's server refuses any other tool a router thread calls. It cannot start, message or delegate to a thread.
+- Its standing instructions (`ROUTER_INSTRUCTIONS`) are its system prompt block on every turn, under Codex and Claude.
+- It gets only these T3 tools: `orchestrator_capabilities` (the models it can propose), `t3_project_list`, `t3_thread_list` and `t3_thread_read` (which workers there are and what they are doing), `list_scheduled_tasks`, `propose_task`, `channel_reply` and `channel_read`. They run without asking. Codex shows it only these, and T3's server refuses any other tool a router thread calls. It cannot start, message or delegate to a thread.
 - `propose_task` only creates a paused proposal. Where a proposal came from is read from the router's last message, and only from a header the channel adapter wrote, so text in a message cannot fake it.
 - `channel_reply` answers only messages you sent. Messages from other people reach the router quoted, as information. `channel_read` reads a conversation the bot can see; a worker reads only its own.
 - Workers get `channel_say`, which posts only in the conversation their task came from. It can attach up to 10 images or videos, only from the worker's own folder (links followed), recognised by their content, and within the channel's own size limit (Slack: 1 GB).

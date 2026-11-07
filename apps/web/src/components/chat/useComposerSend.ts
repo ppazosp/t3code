@@ -1369,7 +1369,8 @@ export function useComposerSend(input: ComposerSendInput) {
             }),
           },
           modelSelection: ctxSelectedModelSelection,
-          titleSeed: title,
+          // A proposal's thread takes the proposal's title, which seeding would overwrite.
+          ...(proposalTaskId === undefined ? { titleSeed: title } : {}),
           runtimeMode,
           interactionMode: sendInteractionMode,
           dispatchMode: turnDispatchMode,
