@@ -50,6 +50,8 @@ The server enforces these limits, whatever the router is told:
 
 ## Turn on Slack
 
+super-t3's mark is T3 Code's own T alone on its black square, in `assets/super-t3/`: `logo.svg` with rounded corners, and `slack-icon-1024.png`, full-bleed for Slack to round, to upload as the app's icon under Basic Information, Display Information.
+
 1. Create the app: go to api.slack.com/apps, choose Create New App, then From a manifest, pick your workspace, and paste `apps/server/src/channels/slack/slack-app-manifest.json`. It asks for every scope super-t3 uses, turns on Socket Mode and Interactivity, and subscribes to DMs, mentions, and messages in public and private channels the bot is in.
 2. Install it to the workspace (Install App). Copy the Bot User OAuth Token (`xoxb-…`).
 3. Under Basic Information, App-Level Tokens, generate a token with the `connections:write` scope. Copy it (`xapp-…`).
