@@ -21,6 +21,10 @@ import {
 import type { BoardColumnId, TaskNode, TaskStatus } from "./tasks.logic";
 import type { TaskActions } from "./useTaskActions";
 
+/** A column's scrollbar shows only while the pointer is over it, so idle columns stay clean. */
+const SCROLLBAR_ON_HOVER =
+  "[&::-webkit-scrollbar-thumb]:bg-transparent hover:[&::-webkit-scrollbar-thumb]:bg-(--app-scrollbar-thumb)";
+
 export interface BoardColumn {
   readonly id: BoardColumnId;
   readonly label: string;
@@ -107,7 +111,12 @@ export function TaskBoard({
               <span className="tabular-nums text-muted-foreground/60">{urgent.length}</span>
             </header>
             {/* The router's composer floats over the bottom; the last card can scroll above it. */}
-            <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto rounded-xl bg-muted/30 p-2 pb-(--router-dock-space)">
+            <div
+              className={cn(
+                "flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto rounded-xl bg-muted/30 p-2 pb-(--router-dock-space)",
+                SCROLLBAR_ON_HOVER,
+              )}
+            >
               {urgent.length === 0 ? (
                 <p className="px-2 py-3 text-xs text-muted-foreground/70">{EMPTY_TEXT[id]}</p>
               ) : (
@@ -144,7 +153,12 @@ export function TaskBoard({
           Hidden columns
         </button>
         {hiddenOpen ? (
-          <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto pb-(--router-dock-space)">
+          <div
+            className={cn(
+              "flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto pb-(--router-dock-space)",
+              SCROLLBAR_ON_HOVER,
+            )}
+          >
             {hiddenColumns.map(({ id, label, tasks }) => {
               const open = openHidden === id;
               return (
@@ -170,7 +184,12 @@ export function TaskBoard({
                     </span>
                   </button>
                   {open ? (
-                    <div className="flex min-h-0 flex-col gap-1.5 overflow-y-auto p-1.5 pt-0">
+                    <div
+                      className={cn(
+                        "flex min-h-0 flex-col gap-1.5 overflow-y-auto p-1.5 pt-0",
+                        SCROLLBAR_ON_HOVER,
+                      )}
+                    >
                       {tasks.length === 0 ? (
                         <p className="px-2 py-2 text-xs text-muted-foreground/70">
                           {EMPTY_TEXT[id]}
