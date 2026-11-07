@@ -1,4 +1,4 @@
-import * as Config from "effect/Config";
+import type { ThreadId } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -7,34 +7,36 @@ import { HttpClient } from "effect/http";
 
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
-import { ChannelError, type ChannelAdapter } from "./Channel.ts";
+import { reportTarget } from "./bridge.ts";
+import { ChannelError, type ChannelAdapter, type ChannelHistoryEntry } from "./Channel.ts";
 import * as ChannelBridge from "./ChannelBridge.ts";
-import { readSlackSettings } from "./slack/parse.ts";
-import * as SlackAdapter from "./slack/SlackAdapter.ts";
+import { CHANNELS } from "./registry.ts";
 
 export { ChannelError } from "./Channel.ts";
+
+/** The most a task may say in its conversation at once. */
+const SAY_LIMIT = 3000;
 
 export interface ChannelsShape {
   /** Posts the router's reply where a channel message came from, named by the `ref` it carried. */
   readonly reply: (ref: string, text: string) => Effect.Effect<void, ChannelError>;
   /** Posts super-t3's own note in a conversation, such as a proposal it made from the user's message. */
   readonly announce: (ref: string, text: string) => Effect.Effect<void, ChannelError>;
+  /** Posts a task's short answer in the conversation the user asked for it in, and nowhere else. */
+  readonly say: (threadId: ThreadId, text: string) => Effect.Effect<void, ChannelError>;
+  /** The latest messages of a conversation, for the router to read what came before. */
+  readonly read: (
+    ref: string,
+    limit: number,
+  ) => Effect.Effect<ReadonlyArray<ChannelHistoryEntry>, ChannelError>;
 }
 
 /**
- * The channels outside T3: Slack so far, each an adapter behind one interface. The bridge passes
- * their messages to the router or to the task they answer, and reports approved tasks back where
- * they came from. Channels are configured by environment variables, so the settings schema stays
- * upstream's.
+ * The channels outside T3, each an adapter behind one interface (see `registry.ts`). The bridge
+ * passes their messages to the router or to the task they answer, and reports approved tasks back
+ * where they came from.
  */
 export class Channels extends Context.Service<Channels, ChannelsShape>()("t3/channels/Channels") {}
-
-const settingsConfig = Config.all({
-  botToken: Config.String("T3_SLACK_BOT_TOKEN").pipe(Config.option),
-  appToken: Config.String("T3_SLACK_APP_TOKEN").pipe(Config.option),
-  trustedUserId: Config.String("T3_SLACK_TRUSTED_USER_ID").pipe(Config.option),
-  watchedChannels: Config.String("T3_SLACK_WATCHED_CHANNELS").pipe(Config.option),
-});
 
 export const layer: Layer.Layer<
   Channels,
@@ -47,24 +49,16 @@ export const layer: Layer.Layer<
   Effect.gen(function* () {
     const threads = yield* ThreadManagementService.ThreadManagementService;
     const engine = yield* Orchestrator.OrchestratorV2;
-    // The router answers only where the user wrote to it, so text it read from anyone else
-    // cannot send it to post somewhere new.
-    const userRefs = new Set<string>();
+    const state = ChannelBridge.makeState();
     const adapters: Array<ChannelAdapter> = [];
-    const slack = readSlackSettings(
-      yield* settingsConfig.pipe(
-        Effect.orElseSucceed(() => ({
-          botToken: Option.none<string>(),
-          appToken: Option.none<string>(),
-          trustedUserId: Option.none<string>(),
-          watchedChannels: Option.none<string>(),
-        })),
-      ),
-    );
-    if (Option.isSome(slack)) adapters.push(yield* SlackAdapter.make(slack.value));
+    for (const channel of CHANNELS) {
+      const adapter = yield* channel.connect;
+      if (Option.isSome(adapter)) adapters.push(adapter.value);
+    }
+    const prefixes = adapters.map((adapter) => adapter.prefix);
     if (adapters.length > 0) {
       yield* Effect.forkScoped(
-        ChannelBridge.run({ adapters, threads, engine, userRefs }).pipe(
+        ChannelBridge.run({ adapters, threads, engine, state }).pipe(
           Effect.catchCause((cause) => Effect.logWarning("The channel bridge stopped", { cause })),
         ),
       );
@@ -73,19 +67,58 @@ export const layer: Layer.Layer<
       Effect.fromNullishOr(adapters.find((candidate) => ref.startsWith(candidate.prefix))).pipe(
         Effect.mapError(() => new ChannelError({ message: "No channel is connected to this T3." })),
       );
+    /** Posts in a conversation, and marks the user's messages there as handled. */
+    const postHandled = Effect.fn("Channels.postHandled")(function* (ref: string, text: string) {
+      const adapter = yield* adapterFor(ref);
+      yield* adapter.post(ref, text);
+      yield* ChannelBridge.markHandled(state, adapter, ref);
+    });
     return Channels.of({
       announce: Effect.fn("Channels.announce")(function* (ref, text) {
-        const adapter = yield* adapterFor(ref);
-        yield* adapter.post(ref, text);
+        yield* postHandled(ref, text);
+        state.proposed.add(ref);
+        if (state.proposed.size > 500) state.proposed.delete(state.proposed.values().next().value!);
       }),
       reply: Effect.fn("Channels.reply")(function* (ref, text) {
-        const adapter = yield* adapterFor(ref);
-        if (!userRefs.has(ref)) {
+        if (state.proposed.has(ref)) {
+          return yield* new ChannelError({
+            message:
+              "T3 already posted your proposal in this conversation, and that answers the user. End your turn without a reply.",
+          });
+        }
+        // The router answers only where the user wrote to it, so text it read from anyone else
+        // cannot send it to post somewhere new.
+        if (!state.userRefs.has(ref)) {
           return yield* new ChannelError({
             message: `You can reply only to a message the user sent you; ${ref} is not one.`,
           });
         }
+        yield* postHandled(ref, text);
+      }),
+      say: Effect.fn("Channels.say")(function* (threadId, text) {
+        const shell = yield* threads
+          .getThreadShell(threadId)
+          .pipe(
+            Effect.mapError(() => new ChannelError({ message: "Could not read this thread." })),
+          );
+        const ref =
+          shell === null ? null : reportTarget(ChannelBridge.toBridgeThread(shell), prefixes);
+        if (ref === null) {
+          return yield* new ChannelError({
+            message: "This thread did not come from the user's message in a channel.",
+          });
+        }
+        if (text.length > SAY_LIMIT) {
+          return yield* new ChannelError({
+            message: `Keep it under ${SAY_LIMIT} characters; the rest belongs in your result.`,
+          });
+        }
+        const adapter = yield* adapterFor(ref);
         yield* adapter.post(ref, text);
+      }),
+      read: Effect.fn("Channels.read")(function* (ref, limit) {
+        const adapter = yield* adapterFor(ref);
+        return yield* adapter.read(ref, Math.max(1, Math.min(limit, 100)));
       }),
     });
   }),

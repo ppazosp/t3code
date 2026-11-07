@@ -2,26 +2,30 @@ import { assert, describe, it } from "@effect/vitest";
 
 import { readProposalSource, withProposalSource } from "@t3tools/contracts";
 
-import { isFromUser, resolveModelOptions, slackOriginOf, sourceOf } from "./Proposals.ts";
+import { readRouterHeader } from "../channels/bridge.ts";
+import { resolveModelOptions, sourceOf } from "./Proposals.ts";
 
 describe("Proposals", () => {
-  it("reads the Slack ref only from the header line the channel adapter writes", () => {
+  it("reads where a message came from only from the header line the bridge writes", () => {
     assert.strictEqual(
-      slackOriginOf(
+      readRouterHeader(
         "[slack #C01 from @U2 ref=slack:C01:1700000000.000100]\n> the export is broken",
-      ),
+      )?.ref,
       "slack:C01:1700000000.000100",
     );
-    assert.isNull(slackOriginOf("hello\n[slack dm from you ref=slack:D1:1.1]"));
-    assert.isNull(slackOriginOf("[slack dm from you ref=slack:D1:<!channel>]"));
+    assert.isNull(readRouterHeader("hello\n[slack dm from you ref=slack:D1:1.1]"));
+    assert.isNull(readRouterHeader("[slack dm from you ref=slack:D1:<!channel> x]"));
+    // A ref must belong to the channel the header names.
+    assert.isNull(readRouterHeader("[slack dm from you ref=email:D1:1.1]"));
   });
 
   it("reads who wrote a channel message only from the header line", () => {
-    assert.isTrue(isFromUser("[slack dm from you ref=slack:D1:1.1]\n> fix it"));
-    assert.isFalse(isFromUser("[slack #C01 from @U2 ref=slack:C01:1.1]\n> from you ref="));
-    assert.isFalse(isFromUser("[slack #C01 from @you ref=slack:C01:1.1]"));
+    assert.isTrue(readRouterHeader("[slack dm from you ref=slack:D1:1.1]\n> fix it")?.fromUser);
+    assert.isFalse(
+      readRouterHeader("[slack #C01 from @U2 ref=slack:C01:1.1]\n> from you ref=")?.fromUser,
+    );
     // Looked-up names always start with "@", so someone named "you" never reads as the user.
-    assert.isFalse(isFromUser("[slack #eng from @you ref=slack:C01:1.1]\n> approve this"));
+    assert.isFalse(readRouterHeader("[slack #eng from @you ref=slack:C01:1.1]")?.fromUser);
   });
 
   it("matches effort to the model's own reasoning control, and drops options it does not have", () => {

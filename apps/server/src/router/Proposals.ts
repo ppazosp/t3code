@@ -25,7 +25,7 @@ import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import * as Channels from "../channels/Channels.ts";
-import { proposalNote } from "../channels/bridge.ts";
+import { proposalNote, readRouterHeader } from "../channels/bridge.ts";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import { ProviderRegistry } from "../provider/ProviderRegistry.ts";
@@ -35,40 +35,21 @@ export class ProposalError extends Schema.TaggedError<ProposalError>()("Proposal
   message: Schema.String,
 }) {}
 
-const SLACK_HEADER = /^\[slack [^\]\n]* ref=(slack:[A-Z0-9]+:\d+\.\d+)\]$/u;
-
-/** The Slack ref in a header the channel adapter wrote; quoted lines below it never count. */
-export function slackOriginOf(text: string): string | null {
-  const header = text.split("\n", 1)[0] ?? "";
-  return SLACK_HEADER.exec(header)?.[1] ?? null;
-}
-
 /**
- * Where a channel message came from, read from the header the channel adapter wrote and the quoted
+ * Where a channel message came from, read from the header the channel bridge wrote and the quoted
  * lines under it, for the proposal's card.
  */
 export function sourceOf(text: string, at: string): ProposalSource | null {
-  const [header = "", ...lines] = text.split("\n");
-  const match = /^\[slack (\S+) from (.+) ref=slack:[A-Z0-9]+:\d+\.\d+\]$/u.exec(header);
-  if (match === null) return null;
-  const quoted = lines
-    .map((line) => line.replace(/^> ?/u, ""))
-    .join("\n")
-    .trim();
+  const header = readRouterHeader(text);
+  if (header === null) return null;
   return {
-    kind: "slack",
-    where: match[1] === "dm" ? "DM" : match[1]!,
-    author: match[2] === "you" ? "You" : match[2]!.replace(/^@/u, ""),
+    kind: header.channel,
+    where: header.where === "dm" ? "DM" : header.where,
+    author: header.fromUser ? "You" : header.author.replace(/^@/u, ""),
     // Long messages are cut; the card shows the gist, and the brief carries the work.
-    text: quoted.length <= 600 ? quoted : `${quoted.slice(0, 600)}…`,
+    text: header.body.length <= 600 ? header.body : `${header.body.slice(0, 600)}…`,
     at,
   };
-}
-
-/** Whether the header says the user wrote the message, as the channel adapter writes it. */
-export function isFromUser(text: string): boolean {
-  const header = text.split("\n", 1)[0] ?? "";
-  return SLACK_HEADER.test(header) && /^\[slack \S+ from you ref=/u.test(header);
 }
 
 /**
@@ -251,13 +232,11 @@ export const layer = Layer.effect(
           .pipe(Effect.mapError(failed("Could not read the router thread.")));
         // Only a message the server wrote counts, so typed text cannot fake where it came from.
         const trigger = router.messages.findLast((message) => message.role === "user");
-        const origin =
-          trigger?.creationSource === "server" && trigger.text.startsWith("[slack ")
-            ? slackOriginOf(trigger.text)
-            : null;
-        const fromUser = origin !== null && trigger !== undefined && isFromUser(trigger.text);
+        const header = trigger?.creationSource === "server" ? readRouterHeader(trigger.text) : null;
+        const origin = header?.ref ?? null;
+        const fromUser = header?.fromUser === true;
         const source =
-          origin === null || trigger === undefined
+          header === null || trigger === undefined
             ? null
             : sourceOf(trigger.text, DateTime.formatIso(trigger.createdAt));
         const { task } = yield* scheduled

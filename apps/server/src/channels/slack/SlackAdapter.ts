@@ -7,11 +7,22 @@ import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 
-import { ChannelError, type ChannelAdapter, type ChannelMessage } from "../Channel.ts";
 import {
+  ChannelError,
+  type ChannelAdapter,
+  type ChannelEvent,
+  type ChannelHistoryEntry,
+} from "../Channel.ts";
+import {
+  APPROVE_ACTION,
+  CHANGE_ACTION,
+  changeForm,
   escapeSlackText,
   parseSlackRef,
+  readSlackInteraction,
   readSlackMessage,
+  slackMarkdown,
+  slackMarkdownFits,
   SocketEnvelope,
   type SlackSettings,
 } from "./parse.ts";
@@ -21,6 +32,18 @@ const SlackOk = Schema.Struct({ ok: Schema.Boolean, error: Schema.optional(Schem
 const ConnectionsOpen = Schema.Struct({ url: Schema.String });
 const AuthTest = Schema.Struct({ user_id: Schema.String });
 const Posted = Schema.Struct({ channel: Schema.String, ts: Schema.String });
+const Replies = Schema.Struct({
+  messages: Schema.Array(
+    Schema.Struct({
+      user: Schema.optional(Schema.String),
+      bot_id: Schema.optional(Schema.String),
+      text: Schema.optional(Schema.String),
+    }),
+  ),
+  response_metadata: Schema.optional(
+    Schema.Struct({ next_cursor: Schema.optional(Schema.String) }),
+  ),
+});
 const ConversationInfo = Schema.Struct({
   channel: Schema.Struct({ name: Schema.optional(Schema.String) }),
 });
@@ -43,7 +66,7 @@ const UserInfo = Schema.Struct({
  */
 const headerSafe = (name: string) =>
   name
-    .replaceAll(/[\]\[\n\r]/gu, " ")
+    .replaceAll(/[\][\n\r]/gu, " ")
     .replaceAll(/\s(from|ref=)\s?/giu, " ")
     .trim();
 
@@ -64,6 +87,7 @@ const encodeAck = Schema.encodeSync(
 );
 
 const slackCall = Effect.fn("SlackAdapter.call")(function* <A>(
+  apiUrl: string,
   method: string,
   token: string,
   body: Record<string, unknown> | undefined,
@@ -71,7 +95,7 @@ const slackCall = Effect.fn("SlackAdapter.call")(function* <A>(
 ) {
   const client = yield* HttpClient.HttpClient;
   const unknownReply = () => new ChannelError({ message: `Slack ${method} sent an unknown reply` });
-  const request = HttpClientRequest.post(`https://slack.com/api/${method}`).pipe(
+  const request = HttpClientRequest.post(`${apiUrl}/${method}`).pipe(
     HttpClientRequest.setHeaders({ Authorization: `Bearer ${token}` }),
     body === undefined ? (same) => same : HttpClientRequest.bodyJsonUnsafe(body),
   );
@@ -86,6 +110,23 @@ const slackCall = Effect.fn("SlackAdapter.call")(function* <A>(
   return yield* HttpClientResponse.schemaBodyJson(schema)(response).pipe(
     Effect.mapError(unknownReply),
   );
+});
+
+/** Slack ignores a repeated reaction or a missing one; T3 does too. */
+const ignoreReactionState = <A, R>(effect: Effect.Effect<A, ChannelError, R>) =>
+  effect.pipe(
+    Effect.asVoid,
+    Effect.catchIf(
+      (error: ChannelError) =>
+        error.message.endsWith("already_reacted") || error.message.endsWith("no_reaction"),
+      () => Effect.void,
+    ),
+  );
+
+/** Slack refuses a section with more than 3000 characters; a title never needs that. */
+const titleSection = (title: string) => ({
+  type: "section",
+  text: { type: "mrkdwn", text: `*${escapeSlackText(title.slice(0, 2900))}*` },
 });
 
 const refOf = (ref: string) =>
@@ -107,9 +148,11 @@ export const make = Effect.fn("SlackAdapter.make")(function* (settings: SlackSet
     schema: Schema.Decoder<A>,
     token = settings.botToken,
   ) =>
-    slackCall(method, token, body, schema).pipe(Effect.provideService(HttpClient.HttpClient, http));
+    slackCall(settings.apiUrl, method, token, body, schema).pipe(
+      Effect.provideService(HttpClient.HttpClient, http),
+    );
 
-  const inbox = yield* Queue.unbounded<ChannelMessage>();
+  const inbox = yield* Queue.unbounded<ChannelEvent>();
   const seen = new Set<string>();
 
   // Channel and people names, looked up once each; without the scopes for it, the ids stay.
@@ -128,7 +171,26 @@ export const make = Effect.fn("SlackAdapter.make")(function* (settings: SlackSet
           Effect.orElseSucceed(() => fallback),
           Effect.tap((name) => Effect.sync(() => names.set(key, name))),
         );
-  const withNames = Effect.fn("SlackAdapter.withNames")(function* (message: ChannelMessage) {
+  // Always "@name": the header reads "from you" for the user, and a display name of "you" must
+  // never pass for that.
+  const personName = (user: string) =>
+    lookup(
+      `user:${user}`,
+      `@${user}`,
+      call(`users.info?user=${encodeURIComponent(user)}`, undefined, UserInfo).pipe(
+        Effect.map((info) => {
+          const name =
+            info.user.profile?.display_name ||
+            info.user.profile?.real_name ||
+            info.user.real_name ||
+            info.user.name;
+          return name === undefined || name.trim() === "" ? undefined : `@${name}`;
+        }),
+      ),
+    );
+  const withNames = Effect.fn("SlackAdapter.withNames")(function* <
+    M extends { readonly where: string; readonly author: string },
+  >(message: M) {
     const channel = message.where.startsWith("#") ? message.where.slice(1) : null;
     const user = message.author.startsWith("@") ? message.author.slice(1) : null;
     const where =
@@ -143,25 +205,7 @@ export const make = Effect.fn("SlackAdapter.make")(function* (settings: SlackSet
               ConversationInfo,
             ).pipe(Effect.map((info) => info.channel.name)),
           )}`;
-    const author =
-      user === null
-        ? message.author
-        : // Always "@name": the header reads "from you" for the user, and a display name of "you"
-          // must never pass for that.
-          yield* lookup(
-            `user:${user}`,
-            `@${user}`,
-            call(`users.info?user=${encodeURIComponent(user)}`, undefined, UserInfo).pipe(
-              Effect.map((info) => {
-                const name =
-                  info.user.profile?.display_name ||
-                  info.user.profile?.real_name ||
-                  info.user.real_name ||
-                  info.user.name;
-                return name === undefined || name.trim() === "" ? undefined : `@${name}`;
-              }),
-            ),
-          );
+    const author = user === null ? message.author : yield* personName(user);
     return { ...message, where, author };
   });
 
@@ -194,12 +238,34 @@ export const make = Effect.fn("SlackAdapter.make")(function* (settings: SlackSet
             socket.send(encodeAck({ envelope_id: envelope.value.envelope_id }));
           }
           if (envelope.value.type === "disconnect") return;
+          if (envelope.value.type === "interactive") {
+            const interaction = readSlackInteraction(
+              envelope.value.payload,
+              settings.trustedUserId,
+            );
+            if (interaction === null) continue;
+            if (interaction.type === "answer") {
+              yield* Queue.offer(inbox, { type: "answer", ...interaction.answer });
+              continue;
+            }
+            // Slack allows opening a form only within 3 seconds of the click, so it opens here.
+            yield* call(
+              "views.open",
+              { trigger_id: interaction.triggerId, view: changeForm(interaction.context) },
+              SlackOk,
+            ).pipe(
+              Effect.catchCause((cause) =>
+                Effect.logWarning("Could not open the Change form", { cause }),
+              ),
+            );
+            continue;
+          }
           if (envelope.value.type !== "events_api") continue;
           const message = readSlackMessage(envelope.value.payload, settings, botUserId);
           // A mention arrives twice, as `message` and `app_mention`, with one id.
           if (Option.isNone(message) || seen.has(message.value.id)) continue;
           rememberBounded(seen, message.value.id);
-          yield* Queue.offer(inbox, yield* withNames(message.value));
+          yield* Queue.offer(inbox, { type: "message", ...(yield* withNames(message.value)) });
         }
       }),
     );
@@ -251,9 +317,112 @@ export const make = Effect.fn("SlackAdapter.make")(function* (settings: SlackSet
     if (state.final) edits.delete(message);
   });
 
+  /** The newest `limit` replies of a thread: Slack sends them oldest first, a page at a time. */
+  const readThread = Effect.fn("SlackAdapter.read")(function* (ref: string, limit: number) {
+    const target = yield* refOf(ref);
+    let kept: Array<ChannelHistoryEntry> = [];
+    let cursor: string | undefined;
+    do {
+      const query = new URLSearchParams({
+        channel: target.channel,
+        ts: target.threadTs,
+        limit: "200",
+        ...(cursor === undefined ? {} : { cursor }),
+      });
+      const page = yield* call(`conversations.replies?${query.toString()}`, undefined, Replies);
+      for (const message of page.messages) {
+        const fromUser = message.bot_id === undefined && message.user === settings.trustedUserId;
+        const author =
+          message.bot_id !== undefined || message.user === undefined
+            ? "a bot"
+            : fromUser
+              ? "you"
+              : yield* personName(message.user);
+        kept.push({ author, fromUser, text: message.text ?? "" });
+      }
+      kept = kept.slice(-limit);
+      cursor = page.response_metadata?.next_cursor?.trim() || undefined;
+    } while (cursor !== undefined);
+    return kept;
+  });
+
+  const approvalBlocks = (title: string, text: string, tail: Record<string, unknown>) => [
+    titleSection(title),
+    { type: "markdown", text: slackMarkdown(text) },
+    tail,
+  ];
+
   return {
+    name: "slack",
     prefix: "slack:",
-    messages: Stream.fromQueue(inbox),
+    events: Stream.fromQueue(inbox),
+    mark: Effect.fn("SlackAdapter.mark")(function* (messageId, mark) {
+      const target = yield* refOf(messageId);
+      const reaction = (method: "reactions.add" | "reactions.remove", name: string) =>
+        call(method, { channel: target.channel, timestamp: target.threadTs, name }, SlackOk).pipe(
+          ignoreReactionState,
+        );
+      if (mark === "seen") return yield* reaction("reactions.add", "eyes");
+      yield* reaction("reactions.remove", "eyes");
+      yield* reaction("reactions.add", "white_check_mark");
+    }),
+    read: readThread,
+    fits: slackMarkdownFits,
+    askApproval: Effect.fn("SlackAdapter.askApproval")(function* ({ ref, askId, title, text }) {
+      if (!slackMarkdownFits(text)) {
+        return yield* new ChannelError({ message: "The plan is too long for one Slack message." });
+      }
+      const target = yield* refOf(ref);
+      const posted = yield* call(
+        "chat.postMessage",
+        {
+          channel: target.channel,
+          thread_ts: target.threadTs,
+          text: escapeSlackText(`Plan to approve: ${title}`),
+          blocks: approvalBlocks(title, text, {
+            type: "actions",
+            elements: [
+              {
+                type: "button",
+                action_id: APPROVE_ACTION,
+                text: { type: "plain_text", text: "Approve" },
+                style: "primary",
+                value: askId,
+              },
+              {
+                type: "button",
+                action_id: CHANGE_ACTION,
+                text: { type: "plain_text", text: "Change" },
+                value: askId,
+              },
+            ],
+          }),
+        },
+        Posted,
+      );
+      return `slack:${posted.channel}:${posted.ts}`;
+    }),
+    closeApproval: Effect.fn("SlackAdapter.closeApproval")(function* ({
+      message,
+      title,
+      text,
+      outcome,
+    }) {
+      const target = yield* refOf(message);
+      yield* call(
+        "chat.update",
+        {
+          channel: target.channel,
+          ts: target.threadTs,
+          text: escapeSlackText(`${title}: ${outcome}`),
+          blocks: approvalBlocks(title, text, {
+            type: "context",
+            elements: [{ type: "mrkdwn", text: escapeSlackText(outcome).slice(0, 3000) }],
+          }),
+        },
+        SlackOk,
+      );
+    }),
     post: Effect.fn("SlackAdapter.post")(function* (ref, text) {
       const target = yield* refOf(ref);
       yield* call(

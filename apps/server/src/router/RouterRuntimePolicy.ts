@@ -20,6 +20,7 @@ export const ROUTER_TOOLS: ReadonlyArray<string> = [
   "list_scheduled_tasks",
   "propose_task",
   "channel_reply",
+  "channel_read",
 ];
 
 /**

@@ -4,10 +4,10 @@ import { LightbulbIcon, XIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
 import type { DraftId } from "../../composerDraftStore";
-import { SlackIcon } from "../Icons";
 import { RelativeTime } from "../RelativeTime";
 import { Button } from "../ui/button";
 import { useProposalDraft } from "./proposalDrafts";
+import { SourceIcon } from "./SourceIcon";
 import { useProposalActions, useProposals } from "./RouterSection";
 
 /**
@@ -39,7 +39,7 @@ export function ProposalComposerTab({
         {source === null ? null : (
           <>
             <span aria-hidden>·</span>
-            <SlackIcon aria-label="Slack" role="img" className="size-3.5 shrink-0" />
+            <SourceIcon kind={source.kind} className="size-3.5 shrink-0" />
             <span className="min-w-0 truncate">
               {source.where} · {source.author} · <RelativeTime timestamp={source.at} />
             </span>

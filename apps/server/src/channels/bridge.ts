@@ -25,24 +25,35 @@ export function originOf(
 
 export const isRouter = (thread: Pick<BridgeThread, "tags">) => thread.tags.includes(ROUTER_TAG);
 
+/** The live tasks that came from the conversation `ref` names. */
+export function tasksFrom(
+  ref: string,
+  threads: Iterable<BridgeThread>,
+  prefixes: ReadonlyArray<string>,
+): ReadonlyArray<BridgeThread> {
+  return [...threads].filter(
+    (thread) => !thread.archived && !isRouter(thread) && originOf(thread, prefixes) === ref,
+  );
+}
+
 /**
- * The task a channel message answers: the user's reply in the conversation exactly one task came
- * from. Anything else goes to the router, which also decides when one conversation fed several
- * tasks.
+ * The task a channel message answers: the user's own request (a DM, or a mention in a channel) in
+ * the conversation exactly one task came from. Anything else goes to the router, which also decides
+ * when one conversation fed several tasks.
  */
 export function taskForMessage(
   message: ChannelMessage,
   threads: Iterable<BridgeThread>,
   prefixes: ReadonlyArray<string>,
 ): BridgeThread | null {
-  if (!message.fromUser) return null;
-  let match: BridgeThread | null = null;
-  for (const thread of threads) {
-    if (thread.archived || isRouter(thread) || originOf(thread, prefixes) !== message.ref) continue;
-    if (match !== null) return null;
-    match = thread;
-  }
-  return match;
+  if (!message.fromUser || !message.direct) return null;
+  const tasks = tasksFrom(message.ref, threads, prefixes);
+  return tasks.length === 1 ? tasks[0]! : null;
+}
+
+/** The user's request that is only "stop": it stops the conversation's tasks, without the router. */
+export function isStop(message: ChannelMessage): boolean {
+  return message.fromUser && message.direct && /^stop[.!]*$/iu.test(message.text.trim());
 }
 
 /**
@@ -62,3 +73,57 @@ export const progressSteps = (
   steps: ReadonlyArray<OrchestrationV2PlanStep>,
 ): ReadonlyArray<ProgressStep> =>
   steps.map((step) => ({ id: step.id, text: step.text, status: step.status }));
+
+/**
+ * The router's message: a header it is told how to read, then the text quoted line by line, so a
+ * line that looks like a header inside someone's message cannot pass for one.
+ */
+export function routerMessageText(channel: string, message: ChannelMessage): string {
+  return `[${channel} ${message.where} from ${message.author} ref=${message.ref}]\n${quote(message.text)}`;
+}
+
+/** What a task gets when the user writes in its conversation, and how to answer there. */
+export function taskMessageText(channel: string, text: string): string {
+  return `The user wrote in your ${channelLabel(channel)} thread:\n${quote(text)}\n\nAnswer briefly there with channel_say, then carry on.`;
+}
+
+/** What a task gets when the user asks, in its conversation, for changes to its plan. */
+export function planChangeText(channel: string, text: string): string {
+  return `The user asked for changes to your plan in ${channelLabel(channel)}:\n${quote(text)}\n\nRevise the plan.`;
+}
+
+const channelLabel = (channel: string) => channel.charAt(0).toUpperCase() + channel.slice(1);
+
+const quote = (text: string) =>
+  text
+    .split("\n")
+    .map((line) => `> ${line}`)
+    .join("\n");
+
+const HEADER = /^\[([a-z][a-z0-9-]*) (\S+) from (.+) ref=(([a-z][a-z0-9-]*):[^\s\]]+)\]$/u;
+
+/** The header of a message the bridge wrote for the router; quoted lines below it never count. */
+export function readRouterHeader(text: string): {
+  readonly channel: string;
+  readonly where: string;
+  readonly author: string;
+  readonly ref: string;
+  readonly fromUser: boolean;
+  /** The quoted message under the header. */
+  readonly body: string;
+} | null {
+  const [header = "", ...lines] = text.split("\n");
+  const match = HEADER.exec(header);
+  if (match === null || match[1] !== match[5]) return null;
+  return {
+    channel: match[1]!,
+    where: match[2]!,
+    author: match[3]!,
+    ref: match[4]!,
+    fromUser: match[3] === "you",
+    body: lines
+      .map((line) => line.replace(/^> ?/u, ""))
+      .join("\n")
+      .trim(),
+  };
+}

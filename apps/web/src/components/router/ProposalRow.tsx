@@ -8,10 +8,10 @@ import { providerInstanceEntriesFor } from "../../providerInstances";
 import { useProjects } from "../../state/entities";
 import { EMPTY_SERVER_PROVIDERS, serverEnvironment } from "../../state/server";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
-import { SlackIcon } from "../Icons";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { Button } from "../ui/button";
 import { SidebarMenuItem } from "../ui/sidebar";
+import { SourceIcon } from "./SourceIcon";
 
 function workspaceLabel(workspace: ScheduledTask["workspaceStrategy"]): string {
   if (workspace.type === "worktree") return `New worktree from ${workspace.baseRef}`;
@@ -69,7 +69,7 @@ export function ProposalRow({
         <span className="truncate text-sm text-sidebar-foreground">{task.title}</span>
         {source === null ? null : (
           <span className="flex min-w-0 items-center gap-1.5 text-xs text-sidebar-muted-foreground">
-            <SlackIcon aria-label="Slack" role="img" className="size-3.5 shrink-0" />
+            <SourceIcon kind={source.kind} className="size-3.5 shrink-0" />
             <span className="truncate">
               {source.where} · {source.author}
             </span>

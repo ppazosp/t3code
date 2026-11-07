@@ -195,6 +195,9 @@ function useOpenProposal() {
           : { envMode: "local" as const, branch: null, worktreePath: null }),
     });
     store.setPrompt(draftId, readProposalSource(task.prompt).brief);
+    // The composer sends with its own modes, so they are set there as well as on the draft thread.
+    store.setRuntimeMode(draftId, task.runtimeMode);
+    store.setInteractionMode(draftId, task.interactionMode);
     store.setModelSelection(draftId, task.modelSelection, { explicit: true, replaceOptions: true });
     await navigate({ to: "/draft/$draftId", params: { draftId } });
   };
