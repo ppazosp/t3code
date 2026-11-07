@@ -58,6 +58,13 @@ function ProposalTab({
         </Button>
       </div>
       <p className="mt-1 text-base font-semibold text-foreground">{task.title}</p>
+      {continues ? (
+        <p className="mt-1 text-xs text-muted-foreground">
+          {source === null
+            ? "Sending here continues this thread with the brief below."
+            : `Sending here continues this thread, and it posts its answers in ${source.where} from then on.`}
+        </p>
+      ) : null}
       {source === null || source.text === "" ? null : (
         <blockquote className="mt-2 line-clamp-3 border-l-2 border-border pl-3 text-sm text-muted-foreground">
           {source.text}
