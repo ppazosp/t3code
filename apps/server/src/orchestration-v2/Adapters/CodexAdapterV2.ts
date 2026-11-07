@@ -1397,6 +1397,9 @@ export const CODEX_T3_TOOLS_ONLY_CONFIG = {
   "features.computer_use": false,
   "features.view_image": false,
   "features.multi_agent": false,
+  "features.multi_agent_v2": false,
+  "features.goals": false,
+  "features.sleep_tool": false,
   "features.tool_suggest": false,
   web_search: "disabled",
 } as const;
