@@ -6,6 +6,7 @@ import { cn } from "~/lib/utils";
 import { canApproveTask, TaskApproveButton } from "./TaskApproveButton";
 import {
   TaskBranchLabel,
+  TaskModelLabel,
   TaskStatusGlyph,
   TaskPinnedMark,
   TaskProjectLabel,
@@ -268,10 +269,11 @@ function TaskCard({
           />
         </span>
         <span className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 pl-5.5">
+          <TaskSlackOrigin task={task} />
           <TaskStatusPill task={task} />
+          <TaskModelLabel task={task} />
           <TaskSubtaskCount task={task} />
           <TaskBranchLabel task={task} />
-          <TaskSlackOrigin task={task} />
         </span>
       </span>
       <span className="pointer-events-none flex min-h-6 min-w-0 items-center gap-2 pl-5.5">

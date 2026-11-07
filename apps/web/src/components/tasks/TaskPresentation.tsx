@@ -10,7 +10,6 @@ import {
   GitBranchIcon,
   LightbulbIcon,
   type LucideIcon,
-  MessagesSquareIcon,
   PinIcon,
   RotateCcwIcon,
 } from "lucide-react";
@@ -24,6 +23,9 @@ import { Input } from "../ui/input";
 import { RelativeTime } from "../RelativeTime";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { resolveThreadStatusPill } from "../Sidebar.logic";
+import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
+import { SlackIcon } from "../Icons";
+import { useTaskModel } from "./useTaskModel";
 import {
   slackOriginOf,
   subtaskProgress,
@@ -260,9 +262,34 @@ export function TaskSlackOrigin({ task }: { task: TaskNode }) {
   if (origin === null) return null;
   const channel = origin.split(":")[1] ?? "";
   return (
-    <span className="inline-flex shrink-0 items-center gap-1 text-2xs text-muted-foreground">
-      <MessagesSquareIcon aria-hidden className="size-3" />
-      {channel.startsWith("D") ? "Slack DM" : `Slack #${channel}`}
+    <Tooltip>
+      <TooltipTrigger render={<span className="inline-flex shrink-0 items-center" />}>
+        <SlackIcon aria-label="Slack" role="img" className="size-3 shrink-0" />
+      </TooltipTrigger>
+      <TooltipPopup side="top">
+        {channel.startsWith("D") ? "Proposed from a Slack DM" : `Proposed from Slack #${channel}`}
+      </TooltipPopup>
+    </Tooltip>
+  );
+}
+
+/** The model the task's session runs on, with its provider's icon. */
+export function TaskModelLabel({ task }: { task: TaskNode }) {
+  const { provider, label } = useTaskModel(task.thread);
+  return (
+    <span className="inline-flex min-w-0 shrink-0 items-center gap-1 text-2xs text-muted-foreground">
+      {provider === null ? null : (
+        <ProviderInstanceIcon
+          driverKind={provider.driverKind}
+          displayName={provider.displayName}
+          accentColor={provider.accentColor}
+          acpRegistryAgentId={provider.acpRegistryAgentId}
+          acpRegistryIconUrl={provider.acpRegistryIconUrl}
+          size="compact"
+          className="size-3"
+        />
+      )}
+      <span className="truncate">{label}</span>
     </span>
   );
 }
