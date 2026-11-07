@@ -49,6 +49,15 @@ export function useProposals() {
   return { environmentId, proposals: (tasks.data?.tasks ?? []).filter(isProposalTask) };
 }
 
+/** The proposal waiting to continue a thread, if the router made one. */
+export function useFollowUpProposal(environmentId: string | null, threadId: string | null) {
+  const { environmentId: proposalsEnvironment, proposals } = useProposals();
+  if (environmentId === null || threadId === null || environmentId !== proposalsEnvironment) {
+    return undefined;
+  }
+  return proposals.find((task) => task.threadId === threadId);
+}
+
 /**
  * The router and its proposals, above the threads; the list shows even when empty. A proposal opens
  * as a T3 draft with the router's choices set, so it is edited and sent like any new chat.
@@ -131,7 +140,12 @@ export function RouterSection() {
                 key={task.id}
                 environmentId={environmentId}
                 task={task}
-                active={activeDraftId !== null && proposalDraftFor(task.id) === activeDraftId}
+                active={
+                  task.threadId !== null
+                    ? routeTarget?.kind === "server" &&
+                      routeTarget.threadRef.threadId === task.threadId
+                    : activeDraftId !== null && proposalDraftFor(task.id) === activeDraftId
+                }
                 onOpen={() => void openProposal(environmentId, task)}
                 onDiscard={() => void actions.discard(environmentId, task)}
               />
@@ -152,6 +166,19 @@ function useOpenProposal() {
   const navigate = useNavigate();
   return async (environmentId: EnvironmentId, task: ScheduledTask) => {
     const store = useComposerDraftStore.getState();
+    // A proposal to continue a thread opens in that thread, with the brief in its composer.
+    if (task.threadId !== null) {
+      const threadRef = scopeThreadRef(environmentId, task.threadId);
+      if ((store.getComposerDraft(threadRef)?.prompt ?? "").trim() === "") {
+        store.setPrompt(threadRef, readProposalSource(task.prompt).brief);
+      }
+      store.setInteractionMode(threadRef, task.interactionMode);
+      await navigate({
+        to: "/$environmentId/$threadId",
+        params: buildThreadRouteParams(threadRef),
+      });
+      return;
+    }
     const existing = proposalDraftFor(task.id);
     const session = existing === null ? null : store.getDraftSession(DraftId.make(existing));
     if (existing !== null && session !== null && session.promotedTo == null) {

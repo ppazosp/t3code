@@ -25,14 +25,31 @@ const handlers = {
         return yield* failure("Only the router thread can propose tasks.");
       }
       const proposals = yield* Proposals.Proposals;
+      let target: Proposals.ProposeInput["target"];
+      if (input.threadId !== undefined) {
+        target = { type: "continue", threadId: input.threadId };
+      } else if (
+        input.projectId === undefined ||
+        input.workspaceStrategy === undefined ||
+        input.agent === undefined
+      ) {
+        return yield* failure(
+          "A new worker needs projectId, workspaceStrategy and agent; to continue a thread, give threadId.",
+        );
+      } else {
+        target = {
+          type: "new",
+          projectId: input.projectId,
+          workspaceStrategy: input.workspaceStrategy,
+          agent: input.agent,
+        };
+      }
       const { id } = yield* proposals
         .propose({
           routerId: thread.threadId,
           title: input.title,
           brief: input.brief,
-          projectId: input.projectId,
-          workspaceStrategy: input.workspaceStrategy,
-          agent: input.agent,
+          target,
           plan: input.plan ?? false,
         })
         .pipe(Effect.mapError((error) => failure(error.message)));

@@ -28,11 +28,14 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/sql/SqlClient";
 
+import { startText } from "../channels/bridge.ts";
 import * as Channels from "../channels/Channels.ts";
+import { CHANNELS } from "../channels/registry.ts";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import { ProviderRegistry } from "../provider/ProviderRegistry.ts";
 import { ScheduledTaskService } from "../scheduledTasks/ScheduledTaskService.ts";
+import { isRouterThread } from "./RouterRuntimePolicy.ts";
 import { type ModelChoice, SuperT3Home } from "./SuperT3Home.ts";
 
 export class ProposalError extends Schema.TaggedError<ProposalError>()("ProposalError", {
@@ -115,14 +118,47 @@ export function workerModelSelection(
   );
 }
 
+/**
+ * The tags a thread gains and loses when it accepts a proposal: it becomes a worker, and takes the
+ * proposal's conversation; a continued thread moves there from the one it had.
+ */
+export function acceptedTags(input: {
+  readonly current: ReadonlyArray<string>;
+  readonly origin: { readonly ref: string; readonly fromUser: boolean } | null;
+  readonly continuing: boolean;
+  readonly channels: ReadonlyArray<string>;
+}): { readonly remove: ReadonlyArray<string>; readonly add: ReadonlyArray<string> } {
+  const add =
+    input.origin === null
+      ? [WORKER_TAG]
+      : [WORKER_TAG, input.origin.ref, ...(input.origin.fromUser ? [FROM_USER_TAG] : [])];
+  const remove =
+    input.continuing && input.origin !== null
+      ? input.current.filter(
+          (tag) =>
+            !add.includes(tag) &&
+            (tag === FROM_USER_TAG || input.channels.some((name) => tag.startsWith(`${name}:`))),
+        )
+      : [];
+  return { remove, add };
+}
+
 export interface ProposeInput {
   readonly routerId: ThreadId;
   readonly title: string;
   readonly brief: string;
-  readonly projectId: ProjectId;
-  readonly workspaceStrategy: OrchestrationV2ThreadLaunchWorkspaceStrategy;
-  /** Who does the work, on the model super-t3's config sets for it. */
-  readonly agent: WorkerAgent;
+  /**
+   * A new worker, on the model super-t3's config sets for its agent; or an existing thread to
+   * continue, which keeps its own folder and model and already holds the context.
+   */
+  readonly target:
+    | {
+        readonly type: "new";
+        readonly projectId: ProjectId;
+        readonly workspaceStrategy: OrchestrationV2ThreadLaunchWorkspaceStrategy;
+        readonly agent: WorkerAgent;
+      }
+    | { readonly type: "continue"; readonly threadId: ThreadId };
   readonly plan: boolean;
 }
 
@@ -178,41 +214,53 @@ export const layer = Layer.effect(
       );
 
     /**
-     * The client tags the thread a proposal's draft became. Its worker then carries the proposal's
-     * title and where it came from, the proposal is used up, and the marker tag goes.
+     * The client tags the thread a proposal became: a new worker, or the thread it continues. That
+     * thread then carries where the proposal came from (a continued one moves to that conversation
+     * and keeps its title), the proposal is used up, and the marker tag goes.
      */
     const onAccepted = Effect.fn("Proposals.onAccepted")(
       function* (task: ScheduledTask, threadId: ThreadId, marker: string) {
         const row = yield* originOf(task.id);
-        const tags =
-          row === null
-            ? [WORKER_TAG]
-            : [WORKER_TAG, row.origin, ...(row.from_user === 1 ? [FROM_USER_TAG] : [])];
-        // The title first: the worker posts in its conversation as soon as it is tagged.
-        yield* threads.dispatch({
-          type: "thread.metadata.update",
-          commandId: CommandId.make(`proposal:title:${threadId}`),
-          threadId,
-          title: task.title,
-        });
-        for (const tag of tags) {
-          yield* threads.dispatch({
+        const continuing = task.threadId === threadId;
+        const setTag = (tag: string, tagged: boolean) =>
+          threads.dispatch({
             type: "thread.tag.set",
-            commandId: CommandId.make(`proposal:tag:${threadId}:${tag}`),
+            commandId: CommandId.make(`proposal:${task.id}:${tagged ? "tag" : "untag"}:${tag}`),
             threadId,
             tag: tag as ThreadTag,
-            tagged: true,
+            tagged,
           });
+        // The title first: a new worker posts in its conversation as soon as it is tagged.
+        if (!continuing) {
+          yield* threads.dispatch({
+            type: "thread.metadata.update",
+            commandId: CommandId.make(`proposal:title:${threadId}`),
+            threadId,
+            title: task.title,
+          });
+        }
+        const shell = continuing ? yield* threads.getThreadShell(threadId) : null;
+        const { remove, add } = acceptedTags({
+          current: shell?.tags ?? [],
+          origin: row === null ? null : { ref: row.origin, fromUser: row.from_user === 1 },
+          continuing,
+          channels: CHANNELS.map((channel) => channel.name),
+        });
+        for (const tag of remove) yield* setTag(tag, false);
+        for (const tag of add) yield* setTag(tag, true);
+        // A continued thread has run before, so the bridge would not say it started there.
+        if (continuing && row !== null) {
+          yield* channels
+            .say(threadId, startText(task.title), [])
+            .pipe(
+              Effect.catchCause((cause) =>
+                Effect.logWarning("Could not say a continued thread started", { cause }),
+              ),
+            );
         }
         yield* sql`DELETE FROM super_t3_proposal_origins WHERE task_id = ${task.id}`;
         yield* scheduled.delete({ id: task.id });
-        yield* threads.dispatch({
-          type: "thread.tag.set",
-          commandId: CommandId.make(`proposal:untag:${threadId}:${marker}`),
-          threadId,
-          tag: marker as ThreadTag,
-          tagged: false,
-        });
+        yield* setTag(marker, false);
       },
       Effect.catchCause((cause) =>
         Effect.logWarning("Could not finish accepting a proposal", { cause }),
@@ -247,6 +295,65 @@ export const layer = Layer.effect(
       ),
     );
 
+    const newWorker = Effect.fn("Proposals.newWorker")(function* (
+      target: Extract<ProposeInput["target"], { readonly type: "new" }>,
+    ) {
+      const choice = (yield* home.config).workers[target.agent];
+      const providers = yield* providerRegistry.getProviders;
+      if (!providers.some((provider) => provider.instanceId === choice.instanceId)) {
+        return yield* new ProposalError({
+          message: `${target.agent === "codex" ? "Codex" : "Claude"} (${choice.instanceId}) is not set up in this T3; propose the other agent.`,
+        });
+      }
+      return {
+        projectId: target.projectId,
+        threadId: null,
+        workspaceStrategy: target.workspaceStrategy,
+        modelSelection: workerModelSelection(choice, providers),
+      };
+    });
+
+    /** A thread to continue: it keeps its own folder and model, and one proposal waits for it at once. */
+    const continuation = Effect.fn("Proposals.continuation")(function* (threadId: ThreadId) {
+      const shell = yield* threads
+        .getThreadShell(threadId)
+        .pipe(Effect.mapError(failed("Could not read that thread.")));
+      if (shell === null || shell.deletedAt !== null) {
+        return yield* new ProposalError({ message: `There is no thread ${threadId}.` });
+      }
+      if (isRouterThread(shell)) {
+        return yield* new ProposalError({
+          message: "You cannot propose work for your own thread.",
+        });
+      }
+      if (shell.archivedAt !== null) {
+        return yield* new ProposalError({
+          message: `${shell.title} is archived. Propose a new task, and name that thread in its brief.`,
+        });
+      }
+      const waiting = yield* scheduled.list().pipe(
+        Effect.map((result) =>
+          result.tasks.some((task) => isProposalTask(task) && task.threadId === threadId),
+        ),
+        Effect.orElseSucceed(() => false),
+      );
+      if (waiting) {
+        return yield* new ProposalError({
+          message: `A proposal to continue ${shell.title} is already waiting for the user.`,
+        });
+      }
+      const workspaceStrategy: OrchestrationV2ThreadLaunchWorkspaceStrategy =
+        shell.worktreePath === null
+          ? { type: "root" }
+          : { type: "existing_worktree", worktreePath: shell.worktreePath };
+      return {
+        projectId: shell.projectId,
+        threadId,
+        workspaceStrategy,
+        modelSelection: shell.modelSelection,
+      };
+    });
+
     return Proposals.of({
       propose: Effect.fn("Proposals.propose")(function* (input) {
         const router = yield* threads
@@ -262,23 +369,20 @@ export const layer = Layer.effect(
           header === null || trigger === undefined
             ? null
             : sourceOf(trigger.text, DateTime.formatIso(trigger.createdAt));
-        const choice = (yield* home.config).workers[input.agent];
-        const providers = yield* providerRegistry.getProviders;
-        if (!providers.some((provider) => provider.instanceId === choice.instanceId)) {
-          return yield* new ProposalError({
-            message: `${input.agent === "codex" ? "Codex" : "Claude"} (${choice.instanceId}) is not set up in this T3; propose the other agent.`,
-          });
-        }
-        const modelSelection = workerModelSelection(choice, providers);
+        const where =
+          input.target.type === "continue"
+            ? yield* continuation(input.target.threadId)
+            : yield* newWorker(input.target);
         const { task } = yield* scheduled
           .upsert({
             title: input.title,
             prompt: source === null ? input.brief : withProposalSource(input.brief, source),
             enabled: false,
             schedule: { type: "once", runAt: PROPOSAL_RUN_AT },
-            projectId: input.projectId,
-            workspaceStrategy: input.workspaceStrategy,
-            modelSelection,
+            projectId: where.projectId,
+            threadId: where.threadId,
+            workspaceStrategy: where.workspaceStrategy,
+            modelSelection: where.modelSelection,
             runtimeMode: "full-access",
             interactionMode: input.plan ? "plan" : "default",
             createdBy: "agent",

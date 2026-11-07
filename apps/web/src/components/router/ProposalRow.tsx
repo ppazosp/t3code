@@ -1,11 +1,17 @@
 import { useAtomValue } from "@effect/atom-react";
 import { readProposalSource, type EnvironmentId, type ScheduledTask } from "@t3tools/contracts";
-import { FolderIcon, FolderTreeIcon, LightbulbIcon, XIcon } from "lucide-react";
+import {
+  CornerDownRightIcon,
+  FolderIcon,
+  FolderTreeIcon,
+  LightbulbIcon,
+  XIcon,
+} from "lucide-react";
 
 import { cn } from "~/lib/utils";
 import { useEnvironmentSettings } from "../../hooks/useSettings";
 import { providerInstanceEntriesFor } from "../../providerInstances";
-import { useProjects } from "../../state/entities";
+import { useProjects, useThreadShells } from "../../state/entities";
 import { EMPTY_SERVER_PROVIDERS, serverEnvironment } from "../../state/server";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import { ProjectFavicon } from "../ProjectFavicon";
@@ -46,6 +52,9 @@ export function ProposalRow({
     (entry) => entry.instanceId === task.modelSelection.instanceId,
   );
   const { source } = readProposalSource(task.prompt);
+  const continued = useThreadShells().find(
+    (thread) => thread.environmentId === environmentId && thread.id === task.threadId,
+  );
 
   return (
     <SidebarMenuItem className="group/proposal">
@@ -75,27 +84,34 @@ export function ProposalRow({
             </span>
           </span>
         )}
-        <span className="flex min-w-0 items-center gap-1.5 text-xs text-sidebar-muted-foreground">
-          {task.workspaceStrategy.type === "root" ? (
-            <FolderIcon aria-hidden className="size-3.5 shrink-0" />
-          ) : (
-            <FolderTreeIcon aria-hidden className="size-3.5 shrink-0" />
-          )}
-          <span className="truncate">{workspaceLabel(task.workspaceStrategy)}</span>
-          <span className="ml-auto flex shrink-0 items-center gap-1.5">
-            {provider === undefined ? null : (
-              <ProviderInstanceIcon
-                driverKind={provider.driverKind}
-                displayName={provider.displayName}
-                accentColor={provider.accentColor}
-                acpRegistryAgentId={provider.acpRegistryAgentId}
-                acpRegistryIconUrl={provider.acpRegistryIconUrl}
-                size="compact"
-                iconClassName="opacity-60"
-              />
-            )}
+        {task.threadId !== null ? (
+          <span className="flex min-w-0 items-center gap-1.5 text-xs text-sidebar-muted-foreground">
+            <CornerDownRightIcon aria-hidden className="size-3.5 shrink-0" />
+            <span className="truncate">Continues {continued?.title ?? "a thread"}</span>
           </span>
-        </span>
+        ) : (
+          <span className="flex min-w-0 items-center gap-1.5 text-xs text-sidebar-muted-foreground">
+            {task.workspaceStrategy.type === "root" ? (
+              <FolderIcon aria-hidden className="size-3.5 shrink-0" />
+            ) : (
+              <FolderTreeIcon aria-hidden className="size-3.5 shrink-0" />
+            )}
+            <span className="truncate">{workspaceLabel(task.workspaceStrategy)}</span>
+            <span className="ml-auto flex shrink-0 items-center gap-1.5">
+              {provider === undefined ? null : (
+                <ProviderInstanceIcon
+                  driverKind={provider.driverKind}
+                  displayName={provider.displayName}
+                  accentColor={provider.accentColor}
+                  acpRegistryAgentId={provider.acpRegistryAgentId}
+                  acpRegistryIconUrl={provider.acpRegistryIconUrl}
+                  size="compact"
+                  iconClassName="opacity-60"
+                />
+              )}
+            </span>
+          </span>
+        )}
       </button>
       {/* Takes the Proposal badge's place on hover. */}
       <span className="absolute top-1 right-1.5 opacity-0 group-focus-within/proposal:opacity-100 group-hover/proposal:opacity-100">

@@ -27,7 +27,8 @@ import { useThreadLifecycle } from "./chat/useThreadLifecycle";
 import { useRightPanelActions } from "./chat/useRightPanelActions";
 import { type TerminalLaunchContext, useChatTerminalActions } from "./chat/useChatTerminalActions";
 import { useComposerSend } from "./chat/useComposerSend";
-import { ProposalComposerTab } from "./router/ProposalComposerTab";
+import { ProposalComposerTab, ProposalFollowUpTab } from "./router/ProposalComposerTab";
+import { useFollowUpProposal } from "./router/RouterSection";
 import { useProposalDraft } from "./router/proposalDrafts";
 import { useComposerResume } from "./chat/useComposerResume";
 import { useImplementPlanInNewThread } from "./chat/useProposedPlanSend";
@@ -1306,8 +1307,10 @@ export default function ChatView(props: ChatViewProps) {
   const activeProviderStatus = selectedProviderEntry?.snapshot ?? null;
   // A proposal the router wants planned keeps plan mode, even where the setting hides it.
   const proposalDraft = useProposalDraft(draftId);
+  const followUpProposal = useFollowUpProposal(environmentId ?? null, threadId ?? null);
   const { enabled: interactionModeEnabled, interactionMode } = resolveComposerInteractionMode({
-    planModeEnabled: settings.planModeEnabled || proposalDraft !== undefined,
+    planModeEnabled:
+      settings.planModeEnabled || proposalDraft !== undefined || followUpProposal !== undefined,
     provider: activeProviderStatus,
     interactionMode:
       composerInteractionMode ?? activeThread?.interactionMode ?? DEFAULT_INTERACTION_MODE,
@@ -3552,6 +3555,13 @@ export default function ChatView(props: ChatViewProps) {
                         : undefined
                     }
                   >
+                    {/* super-t3: a proposal to continue this thread sits on its composer. */}
+                    {isDraftHeroState || activeThreadRef === null ? null : (
+                      <ProposalFollowUpTab
+                        environmentId={activeThreadRef.environmentId}
+                        threadId={activeThreadRef.threadId}
+                      />
+                    )}
                     <ChildThreadApprovals threadRef={activeThreadRef} />
                     <ComposerSurface.Shell contextRow={showComposerContextStrip}>
                       <ComposerSurface.Host

@@ -3,6 +3,7 @@ import {
   OrchestratorMcpFailure,
   ProjectId,
   ScheduledTaskId,
+  ThreadId,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
@@ -13,13 +14,14 @@ import * as McpInvocationContext from "../../McpInvocationContext.ts";
 
 const ProposeTaskTool = Tool.make("propose_task", {
   description:
-    "Router only. Propose work for the user to accept or discard in T3; nothing runs until they accept. `brief` is the worker's whole instruction. `workspaceStrategy` is where it runs: a new worktree from `baseRef`, the project's `root` folder, or an `existing_worktree` path. `agent` is who does the work, `codex` or `claude`; each runs on the model super-t3's config sets for it. Set `plan` to start with a plan for review.",
+    "Router only. Propose work for the user to accept or discard in T3; nothing runs until they accept. To continue a thread that already worked on this, give its `threadId`: the brief becomes its next message, and it keeps its own folder, model and context. Otherwise propose a new worker: `projectId`, `workspaceStrategy` (a new worktree from `baseRef`, the project's `root` folder, or an `existing_worktree` path) and `agent` (`codex` or `claude`; each runs on the model super-t3's config sets for it). `brief` is the whole instruction. Set `plan` to start with a plan for review.",
   parameters: Schema.Struct({
     title: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(120)),
     brief: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(20_000)),
-    projectId: ProjectId,
-    workspaceStrategy: OrchestrationV2ThreadLaunchWorkspaceStrategy,
-    agent: Schema.Literals(["codex", "claude"]),
+    threadId: Schema.optional(ThreadId),
+    projectId: Schema.optional(ProjectId),
+    workspaceStrategy: Schema.optional(OrchestrationV2ThreadLaunchWorkspaceStrategy),
+    agent: Schema.optional(Schema.Literals(["codex", "claude"])),
     plan: Schema.optional(Schema.Boolean),
   }),
   success: Schema.Struct({ proposalId: ScheduledTaskId }),

@@ -2,7 +2,7 @@ import { assert, describe, it } from "@effect/vitest";
 
 import { readChannelHeader, readProposalSource, withProposalSource } from "@t3tools/contracts";
 
-import { resolveModelOptions, sourceOf, workerModelSelection } from "./Proposals.ts";
+import { acceptedTags, resolveModelOptions, sourceOf, workerModelSelection } from "./Proposals.ts";
 import { DEFAULT_CONFIG } from "./SuperT3Home.ts";
 
 describe("Proposals", () => {
@@ -65,6 +65,33 @@ describe("Proposals", () => {
       { id: "reasoningEffort", value: "low" },
     ]);
     assert.deepStrictEqual(resolveModelOptions(guessed, "extreme", providers).options, []);
+  });
+
+  it("makes an accepted thread a worker, and moves a continued one to the new conversation", () => {
+    const origin = { ref: "slack:C2:2.0", fromUser: true };
+    assert.deepStrictEqual(
+      acceptedTags({ current: [], origin: null, continuing: false, channels: ["slack"] }),
+      { remove: [], add: ["worker"] },
+    );
+    assert.deepStrictEqual(
+      acceptedTags({
+        current: ["worker", "slack:C1:1.0", "from-you", "pinned"],
+        origin,
+        continuing: true,
+        channels: ["slack"],
+      }),
+      { remove: ["slack:C1:1.0"], add: ["worker", "slack:C2:2.0", "from-you"] },
+    );
+    // Continued from a proposal made in T3, a thread keeps the conversation it has.
+    assert.deepStrictEqual(
+      acceptedTags({
+        current: ["slack:C1:1.0", "from-you"],
+        origin: null,
+        continuing: true,
+        channels: ["slack"],
+      }).remove,
+      [],
+    );
   });
 
   it("runs a worker on its agent's model and effort from the config", () => {
