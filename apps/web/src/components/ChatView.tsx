@@ -27,7 +27,6 @@ import { useThreadLifecycle } from "./chat/useThreadLifecycle";
 import { useRightPanelActions } from "./chat/useRightPanelActions";
 import { type TerminalLaunchContext, useChatTerminalActions } from "./chat/useChatTerminalActions";
 import { useComposerSend } from "./chat/useComposerSend";
-import { ProposalDraftCard } from "./router/ProposalDraftCard";
 import { useComposerResume } from "./chat/useComposerResume";
 import { useImplementPlanInNewThread } from "./chat/useProposedPlanSend";
 import { ThreadFind, ThreadFindCanvas } from "./chat/ThreadFindProvider";
@@ -3526,8 +3525,6 @@ export default function ChatView(props: ChatViewProps) {
                             : undefined
                         }
                       >
-                        {/* super-t3: a proposal's draft shows what the router suggested. */}
-                        <ProposalDraftCard draftId={draftId} />
                         <DraftHeroHeadline
                           draftId={draftId}
                           activeProjectRef={activeProjectRef}
