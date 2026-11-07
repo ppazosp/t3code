@@ -50,14 +50,18 @@ The server enforces these limits, whatever the router is told:
 
 ## Turn on Slack
 
-Set these environment variables for the server, then restart it:
+1. Create the app: go to api.slack.com/apps, choose Create New App, then From a manifest, pick your workspace, and paste `apps/server/src/channels/slack/slack-app-manifest.json`. It asks for every scope super-t3 uses, turns on Socket Mode and Interactivity, and subscribes to DMs, mentions, and messages in public and private channels the bot is in.
+2. Install it to the workspace (Install App). Copy the Bot User OAuth Token (`xoxb-…`).
+3. Under Basic Information, App-Level Tokens, generate a token with the `connections:write` scope. Copy it (`xapp-…`).
+4. Find your member ID: in Slack, open your profile, choose the ⋮ menu, then Copy member ID.
+5. Invite the bot to each channel it should read: `/invite @super-t3`. For channels the router should read in full, not only mentions, copy each channel's ID (channel details, at the bottom).
+6. Set these environment variables for the server, then restart it:
+   - `T3_SLACK_BOT_TOKEN`: the bot token.
+   - `T3_SLACK_APP_TOKEN`: the app-level token.
+   - `T3_SLACK_TRUSTED_USER_ID`: your member ID.
+   - `T3_SLACK_WATCHED_CHANNELS`: optional, a comma-separated list of channel IDs the router reads in full.
 
-- `T3_SLACK_BOT_TOKEN`: the bot token (`xoxb-…`). It needs the `chat:write`, `im:history`, `channels:history` and `app_mentions:read` scopes, and `channels:read` and `users:read` to show channel and people names instead of their ids.
-- `T3_SLACK_APP_TOKEN`: an app-level token (`xapp-…`) with `connections:write`, for Socket Mode.
-- `T3_SLACK_TRUSTED_USER_ID`: your Slack member ID.
-- `T3_SLACK_WATCHED_CHANNELS`: optional, a comma-separated list of channel IDs the router reads in full.
-
-The bot token also needs `reactions:write` for 👀 and ✅. Turn on Socket Mode and Interactivity for the app, and subscribe it to the `message.im`, `message.channels` and `app_mention` events.
+A file like `.env.super-t3` at the repository root keeps them out of git (`.env*` is ignored). The server logs "Slack connected" once it is in.
 
 Use a Slack app of its own. Slack splits events between every connection on one app token, so sharing a token with another running service loses messages.
 
