@@ -5,7 +5,6 @@ import * as Stream from "effect/Stream";
 
 import type {
   ChannelAdapter,
-  ChannelChart,
   ChannelEvent,
   ChannelHistoryEntry,
   ChannelMessage,
@@ -64,7 +63,7 @@ function runBridge(input: {
   /** How many runs T3 has for the task. */
   readonly runs?: number;
 }) {
-  const posts: Array<{ ref: string; text: string; charts: ReadonlyArray<ChannelChart> }> = [];
+  const posts: Array<{ ref: string; text: string }> = [];
   const sent: Array<{ threadId: string; text: string }> = [];
   const marks: Array<[string, string]> = [];
   const statuses: Array<[string, string]> = [];
@@ -76,7 +75,7 @@ function runBridge(input: {
     events: Stream.fromIterable(input.channel ?? []),
     post: (ref, post) =>
       Effect.sync(() => {
-        posts.push({ ref, text: post.text, charts: post.charts ?? [] });
+        posts.push({ ref, text: post.text });
         return `slack:C1:post-${posts.length}`;
       }),
     mark: (id, mark) => Effect.sync(() => void marks.push([id, mark])),
@@ -147,28 +146,20 @@ describe("ChannelBridge", () => {
         runs: 3,
         events: [
           runEvent("run.created", "running"),
-          itemEvent({ type: "assistant_message", text: "Charted it.", streaming: false }),
+          itemEvent({ type: "assistant_message", text: "Fixed it.", streaming: false }),
           runEvent("run.updated", "completed"),
         ],
       });
       assert.deepStrictEqual(
         posts.map((post) => post.text),
-        ["Charted it."],
+        ["Fixed it."],
       );
     }),
   );
 
-  it.effect("posts a planning run's plan, with any charts, and waits for the user", () =>
+  it.effect("posts a planning run's plan and waits for the user", () =>
     Effect.gen(function* () {
-      const chart: ChannelChart = {
-        kind: "pie",
-        title: "Orders",
-        segments: [{ label: "Empty", value: 3 }],
-      };
-      const state = ChannelBridge.makeState();
-      state.charts.set("task", [chart]);
       const { posts, statuses } = yield* runBridge({
-        state,
         existing: [thread("task", { tags: [ORIGIN], interactionMode: "plan" })],
         events: [
           runEvent("run.created", "running"),
@@ -180,9 +171,7 @@ describe("ChannelBridge", () => {
       assert.deepStrictEqual(posts.at(-1), {
         ref: ORIGIN,
         text: "# Plan\n- do it",
-        charts: [chart],
       });
-      assert.isFalse(state.charts.has("task"));
       assert.deepStrictEqual(statuses.at(-1), [ORIGIN, "waiting"]);
     }),
   );

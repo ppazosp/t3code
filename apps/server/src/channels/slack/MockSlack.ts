@@ -364,7 +364,6 @@ function blocks(m) {
     if (b.type === "markdown") return '<div class="md">' + esc(b.text) + '</div>';
     if (b.type === "rich_text") return '<div class="md">' + esc(b.elements[0].elements[0].text) + '</div>';
     if (b.type === "context") return '<div class="ctx">' + esc(b.elements[0].text) + '</div>';
-    if (b.type === "data_visualization") return '<div class="md">📊 ' + esc(b.title) + ' (' + esc(b.chart.type) + ' chart)</div>';
     return "";
   }).join("");
 }

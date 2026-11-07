@@ -9,7 +9,6 @@ import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 import {
   ChannelError,
   type ChannelAdapter,
-  type ChannelChart,
   type ChannelEvent,
   type ChannelHistoryEntry,
 } from "../Channel.ts";
@@ -120,34 +119,6 @@ const ignoreReactionState = <A, R>(effect: Effect.Effect<A, ChannelError, R>) =>
 
 /** Slack's names for a session's status: "processing" shows its loading line and Stop button. */
 const SESSION_STATUS = { working: "processing", idle: "active", waiting: "suspended" } as const;
-
-/** Slack's data visualization block for a chart. */
-const chartBlock = (chart: ChannelChart) =>
-  chart.kind === "pie"
-    ? {
-        type: "data_visualization",
-        title: chart.title,
-        chart: { type: "pie", segments: chart.segments },
-      }
-    : {
-        type: "data_visualization",
-        title: chart.title,
-        chart: {
-          type: chart.kind,
-          series: chart.series.map((series) => ({
-            name: series.name,
-            data: chart.categories.map((label, index) => ({
-              label,
-              value: series.values[index] ?? 0,
-            })),
-          })),
-          axis_config: {
-            categories: chart.categories,
-            ...(chart.xLabel === undefined ? {} : { x_label: chart.xLabel }),
-            ...(chart.yLabel === undefined ? {} : { y_label: chart.yLabel }),
-          },
-        },
-      };
 
 const CUT_NOTE = "\n\n…The rest is in T3.";
 
@@ -368,20 +339,17 @@ export const make = Effect.fn("SlackAdapter.make")(function* (settings: SlackSet
         SlackOk,
       );
     }),
-    post: Effect.fn("SlackAdapter.post")(function* (ref, { text, charts = [] }) {
+    post: Effect.fn("SlackAdapter.post")(function* (ref, { text }) {
       const target = yield* refOf(ref);
-      const blocks = [
-        ...(text.trim() === "" ? [] : [{ type: "markdown", text: slackMarkdown(fitted(text)) }]),
-        ...charts.slice(0, 2).map(chartBlock),
-      ];
-      const fallback = text.trim() === "" ? charts.map((chart) => chart.title).join(", ") : text;
+      const blocks =
+        text.trim() === "" ? [] : [{ type: "markdown", text: slackMarkdown(fitted(text)) }];
       const posted = yield* call(
         "chat.postMessage",
         {
           channel: target.channel,
           thread_ts: target.threadTs,
           // What notifications and clients without blocks show.
-          text: escapeSlackText(fallback.slice(0, 3000)),
+          text: escapeSlackText(text.slice(0, 3000)),
           blocks,
         },
         Posted,

@@ -92,9 +92,7 @@ export function taskMessageText(input: {
       "You were planning. If the user approves your plan, implement it now. If they want changes, revise the plan and end your turn with it, for them to answer.",
     );
   }
-  parts.push(
-    `Your final message is posted in the ${label} thread, so make it the answer. To show data there, attach charts to it with channel_chart rather than making images.`,
-  );
+  parts.push(`Your final message is posted in the ${label} thread, so make it the answer.`);
   return parts.join("\n\n");
 }
 

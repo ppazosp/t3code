@@ -9,7 +9,7 @@ super-t3 is a fork of T3 Code that turns it into a super-agent. It keeps T3's ow
 - Channels: outside conversations, each an adapter behind one interface. Slack is the first. super-t3 acts only for you, and stays quiet:
   - DM super-t3, or mention it in a channel, and get 👀 within a second. It becomes ✅ once the router answers in the thread, or proposes work for it. A proposal posts nothing: it waits in T3 for you to accept.
   - Everything said in the channels you choose to watch reaches the router as information, replies in threads included, so it can propose work from it. Other people's DMs get one reply saying it works only for you.
-  - Once you accept a proposal, its worker owns the conversation the proposal came from, whoever wrote the message there. It posts once that it started, then nothing until it has an answer, a plan or a question, each a new message in Markdown, with charts when it attached any (`channel_chart`, Slack's data visualization block).
+  - Once you accept a proposal, its worker owns the conversation the proposal came from, whoever wrote the message there. It posts once that it started, then nothing until it has an answer, a plan or a question, each a new message in Markdown.
   - Messages in that conversation stay in Slack until you tag super-t3 there. Your tag goes to the worker, which steers it, with everything said since your last tag; other people's words are information, never instructions. Untagged messages, and other people's tags, do nothing. A planning worker takes your answer to its plan as approval or changes.
   - Say "stop" there (with a mention in a channel), or press Stop in Slack's agent panel, and the conversation's workers stop.
   - super-t3 is a Slack agent: in your DMs, its panel shows it working, with a Stop button, ready once it answers, and waiting while a plan needs your answer. Agents need a paid Slack plan; on a free one Slack shows super-t3 as an ordinary app.
@@ -20,7 +20,7 @@ super-t3 is a fork of T3 Code that turns it into a super-agent. It keeps T3's ow
 
 A channel is one folder in `apps/server/src/channels/` and one line in `registry.ts`:
 
-1. Implement `ChannelAdapter` from `Channel.ts`: events in (messages, its own Stop control, and outsiders writing to T3), and posts (Markdown, with charts where the channel draws them), marks (👀 and ✅), a conversation's status, and reading a conversation out. Every ref the adapter issues starts with its name and a colon, such as `email:`.
+1. Implement `ChannelAdapter` from `Channel.ts`: events in (messages, its own Stop control, and outsiders writing to T3), and posts (Markdown), marks (👀 and ✅), a conversation's status, and reading a conversation out. Every ref the adapter issues starts with its name and a colon, such as `email:`.
 2. Write a `ChannelDefinition`: the channel's name, its settings read from the environment (`Option.none` keeps it off), and `make`, which builds the adapter.
 3. Add `register(yourChannel)` to `CHANNELS` in `registry.ts`.
 
@@ -44,7 +44,7 @@ The server enforces these limits, whatever the router is told:
 - It gets only these T3 tools: `orchestrator_capabilities`, `t3_project_list`, `t3_project_read`, `t3_thread_list`, `t3_thread_read`, `t3_thread_search`, `list_scheduled_tasks`, `propose_task`, `channel_reply` and `channel_read`. They run without asking. Codex shows it only these, and T3's server refuses any other tool a router thread calls. It cannot start, message or delegate to a thread.
 - `propose_task` only creates a paused proposal. Where a proposal came from is read from the router's last message, and only from a header the channel adapter wrote, so text in a message cannot fake it.
 - `channel_reply` answers only messages you sent. Messages from other people reach the router quoted, as information. `channel_read` reads a conversation the bot can see.
-- Workers get `channel_say` and `channel_chart`, which post only in the conversation their task came from.
+- Workers get `channel_say`, which posts only in the conversation their task came from.
 
 ## Turn on Slack
 

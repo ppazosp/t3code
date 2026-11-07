@@ -12,7 +12,7 @@ import * as Stream from "effect/Stream";
 
 import type * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import type * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
-import type { ChannelAdapter, ChannelChart, ChannelEvent, ChannelMessage } from "./Channel.ts";
+import type { ChannelAdapter, ChannelEvent, ChannelMessage } from "./Channel.ts";
 import {
   isRouter,
   isStop,
@@ -79,15 +79,12 @@ export interface BridgeState {
   readonly waiting: Map<string, Array<string>>;
   /** Conversations the router proposed work for since the user last wrote: that is the answer. */
   readonly proposed: Set<string>;
-  /** Charts a task attached to its next post, by task thread. */
-  readonly charts: Map<string, Array<ChannelChart>>;
 }
 
 export const makeState = (): BridgeState => ({
   userRefs: new Set(),
   waiting: new Map(),
   proposed: new Set(),
-  charts: new Map(),
 });
 
 const remember = <K, V>(map: Map<K, V>, key: K, value: V) => {
@@ -368,11 +365,7 @@ export const run = Effect.fn("ChannelBridge.run")(function* (input: {
     activeRuns.delete(runRecord.threadId);
     // A plan is what a planning run ends with; it goes out like any answer, for the user to answer.
     const text = resultText(outcome, report.plan ?? report.result);
-    const charts = state.charts.get(report.threadId) ?? [];
-    state.charts.delete(report.threadId);
-    if (text !== null || charts.length > 0) {
-      yield* report.adapter.post(report.ref, { text: text ?? "", charts });
-    }
+    if (text !== null) yield* report.adapter.post(report.ref, { text });
     const waitsForUser =
       outcome === "completed" && known.get(runRecord.threadId)?.interactionMode === "plan";
     yield* setStatus(report.adapter, report.ref, waitsForUser ? "waiting" : "idle");

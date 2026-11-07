@@ -47,30 +47,9 @@ export interface ChannelHistoryEntry {
   readonly text: string;
 }
 
-/** A chart a channel draws under a post, where it can draw one. */
-export type ChannelChart =
-  | {
-      readonly kind: "pie";
-      readonly title: string;
-      readonly segments: ReadonlyArray<{ readonly label: string; readonly value: number }>;
-    }
-  | {
-      readonly kind: "bar" | "line" | "area";
-      readonly title: string;
-      readonly categories: ReadonlyArray<string>;
-      /** One value per category, in the categories' order. */
-      readonly series: ReadonlyArray<{
-        readonly name: string;
-        readonly values: ReadonlyArray<number>;
-      }>;
-      readonly xLabel?: string | undefined;
-      readonly yLabel?: string | undefined;
-    };
-
-/** What T3 posts: Markdown, which the adapter makes safe to post, and any charts under it. */
+/** What T3 posts: Markdown, which the adapter makes safe to post. */
 export interface ChannelPost {
   readonly text: string;
-  readonly charts?: ReadonlyArray<ChannelChart> | undefined;
 }
 
 /**

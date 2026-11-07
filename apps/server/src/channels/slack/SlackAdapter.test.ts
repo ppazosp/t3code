@@ -69,7 +69,7 @@ describe("SlackAdapter against a mock Slack", () => {
     ),
   );
 
-  it.live("marks, posts Markdown with charts, and reads the thread back", () =>
+  it.live("marks, posts Markdown, and reads the thread back", () =>
     withSlack((slack) =>
       Effect.gen(function* () {
         const { adapter } = yield* connect(slack);
@@ -83,16 +83,6 @@ describe("SlackAdapter against a mock Slack", () => {
 
         const posted = yield* adapter.post(ref, {
           text: "**Done** <!channel> [docs](http://x)",
-          charts: [
-            { kind: "pie", title: "Orders", segments: [{ label: "Empty", value: 3 }] },
-            {
-              kind: "bar",
-              title: "Load",
-              categories: ["Mon", "Tue"],
-              series: [{ name: "Requests", values: [4, 7] }],
-              yLabel: "req/s",
-            },
-          ],
         });
         const reply = slack.messages[1]!;
         assert.strictEqual(posted, `slack:DME:${reply.ts}`);
@@ -100,28 +90,6 @@ describe("SlackAdapter against a mock Slack", () => {
         assert.deepStrictEqual(reply.blocks, [
           // Markdown renders, but cannot ping anyone or hide a link.
           { type: "markdown", text: "**Done** &lt;!channel&gt; docs (http://x)" },
-          {
-            type: "data_visualization",
-            title: "Orders",
-            chart: { type: "pie", segments: [{ label: "Empty", value: 3 }] },
-          },
-          {
-            type: "data_visualization",
-            title: "Load",
-            chart: {
-              type: "bar",
-              series: [
-                {
-                  name: "Requests",
-                  data: [
-                    { label: "Mon", value: 4 },
-                    { label: "Tue", value: 7 },
-                  ],
-                },
-              ],
-              axis_config: { categories: ["Mon", "Tue"], y_label: "req/s" },
-            },
-          },
         ]);
 
         const history = yield* adapter.read(ref, 10);

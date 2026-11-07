@@ -1,7 +1,6 @@
 import { OrchestratorMcpFailure } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 
-import type { ChannelChart } from "../../../channels/Channel.ts";
 import * as Channels from "../../../channels/Channels.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import { isRouterThread } from "../../../router/RouterRuntimePolicy.ts";
@@ -46,39 +45,6 @@ const handlers = {
         .say(self.threadId, input.text)
         .pipe(Effect.mapError((error) => failure(error.message)));
       return { posted: true as const };
-    }),
-  ),
-  channel_chart: McpToolAccess.actsAsCaller((input) =>
-    Effect.gen(function* () {
-      const self = yield* caller("channel_chart");
-      if (self.router) return yield* failure("Only workers attach charts to their answers.");
-      const chart: ChannelChart | null =
-        input.kind === "pie"
-          ? input.segments === undefined
-            ? null
-            : { kind: "pie", title: input.title, segments: input.segments }
-          : input.categories === undefined || input.series === undefined
-            ? null
-            : {
-                kind: input.kind,
-                title: input.title,
-                categories: input.categories,
-                series: input.series,
-                xLabel: input.xLabel,
-                yLabel: input.yLabel,
-              };
-      if (chart === null) {
-        return yield* failure(
-          input.kind === "pie"
-            ? "A pie chart needs `segments`."
-            : "A bar, line or area chart needs `categories` and `series`.",
-        );
-      }
-      const channels = yield* Channels.Channels;
-      yield* channels
-        .chart(self.threadId, chart)
-        .pipe(Effect.mapError((error) => failure(error.message)));
-      return { attached: true as const };
     }),
   ),
   channel_read: McpToolAccess.readsAsCaller((input) =>
