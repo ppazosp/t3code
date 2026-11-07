@@ -4,6 +4,7 @@ import { findRevealRef } from "./markdownFindContext";
 import {
   type EnvironmentId,
   type MessageId,
+  readChannelHeader,
   type ScheduledTaskId,
   type ServerProviderSkill,
   ThreadId,
@@ -26,6 +27,7 @@ import {
   isVideoAttachment,
 } from "../../types";
 import ChatMarkdown from "../ChatMarkdown";
+import { ChannelMessageRow } from "../router/ChannelMessageRow";
 import {
   CalendarClockIcon,
   ChevronDownIcon,
@@ -262,6 +264,10 @@ export function UserMessageRow({ row }: { row: Extract<TimelineRow, { kind: "mes
 
 function UserMessageContent({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
+  // Only a message the server wrote can be a channel message, so typed text never passes for one.
+  const channel =
+    row.message.creationSource === "server" ? readChannelHeader(row.message.text) : null;
+  if (channel !== null) return <ChannelMessageRow header={channel} at={row.message.createdAt} />;
   return ctx.workflowOpening?.messageId === row.message.id ? (
     <WorkflowOpeningBlock
       opening={ctx.workflowOpening}

@@ -99,31 +99,3 @@ const quote = (text: string) =>
     .split("\n")
     .map((line) => `> ${line}`)
     .join("\n");
-
-const HEADER = /^\[([a-z][a-z0-9-]*) (\S+) from (.+) ref=(([a-z][a-z0-9-]*):[^\s\]]+)\]$/u;
-
-/** The header of a message the bridge wrote for the router; quoted lines below it never count. */
-export function readRouterHeader(text: string): {
-  readonly channel: string;
-  readonly where: string;
-  readonly author: string;
-  readonly ref: string;
-  readonly fromUser: boolean;
-  /** The quoted message under the header. */
-  readonly body: string;
-} | null {
-  const [header = "", ...lines] = text.split("\n");
-  const match = HEADER.exec(header);
-  if (match === null || match[1] !== match[5]) return null;
-  return {
-    channel: match[1]!,
-    where: match[2]!,
-    author: match[3]!,
-    ref: match[4]!,
-    fromUser: match[3] === "you",
-    body: lines
-      .map((line) => line.replace(/^> ?/u, ""))
-      .join("\n")
-      .trim(),
-  };
-}

@@ -92,3 +92,49 @@ export function isProposalTask(task: {
  * conversation; work proposed from someone else's message never posts in their thread.
  */
 export const FROM_USER_TAG = "from-you";
+
+const CHANNEL_HEADER = /^\[([a-z][a-z0-9-]*) (\S+) from (.+) ref=(([a-z][a-z0-9-]*):[^\s\]]+)\]$/u;
+
+/** A channel message as the bridge hands it to the router: a header line, then the message quoted. */
+export interface ChannelHeader {
+  /** The channel's name, such as `slack`. */
+  readonly channel: string;
+  readonly where: string;
+  readonly author: string;
+  readonly ref: string;
+  readonly fromUser: boolean;
+  /** The quoted message under the header. */
+  readonly body: string;
+}
+
+/**
+ * Reads the header of a message the bridge wrote for the router. Only its first line counts, so a
+ * header someone typed inside their message, which arrives quoted, never reads as one.
+ */
+export function readChannelHeader(text: string): ChannelHeader | null {
+  const [header = "", ...lines] = text.split("\n");
+  const match = CHANNEL_HEADER.exec(header);
+  if (match === null || match[1] !== match[5]) return null;
+  return {
+    channel: match[1]!,
+    where: match[2]!,
+    author: match[3]!,
+    ref: match[4]!,
+    fromUser: match[3] === "you",
+    body: lines
+      .map((line) => line.replace(/^> ?/u, ""))
+      .join("\n")
+      .trim(),
+  };
+}
+
+/** Where a channel message came from, as people read it: "DM" or "#eng", and "You" or a name. */
+export function channelSourceLabels(header: Pick<ChannelHeader, "where" | "author" | "fromUser">): {
+  readonly where: string;
+  readonly author: string;
+} {
+  return {
+    where: header.where === "dm" ? "DM" : header.where,
+    author: header.fromUser ? "You" : header.author.replace(/^@/u, ""),
+  };
+}

@@ -1,9 +1,11 @@
 import {
   ACCEPTED_TAG_PREFIX,
+  channelSourceLabels,
   CommandId,
   FROM_USER_TAG,
   isProposalTask,
   PROPOSAL_RUN_AT,
+  readChannelHeader,
   withProposalSource,
   type ModelSelection,
   type OrchestrationV2DomainEvent,
@@ -25,7 +27,7 @@ import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import * as Channels from "../channels/Channels.ts";
-import { proposalNote, readRouterHeader } from "../channels/bridge.ts";
+import { proposalNote } from "../channels/bridge.ts";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import { ProviderRegistry } from "../provider/ProviderRegistry.ts";
@@ -40,12 +42,11 @@ export class ProposalError extends Schema.TaggedError<ProposalError>()("Proposal
  * lines under it, for the proposal's card.
  */
 export function sourceOf(text: string, at: string): ProposalSource | null {
-  const header = readRouterHeader(text);
+  const header = readChannelHeader(text);
   if (header === null) return null;
   return {
     kind: header.channel,
-    where: header.where === "dm" ? "DM" : header.where,
-    author: header.fromUser ? "You" : header.author.replace(/^@/u, ""),
+    ...channelSourceLabels(header),
     // Long messages are cut; the card shows the gist, and the brief carries the work.
     text: header.body.length <= 600 ? header.body : `${header.body.slice(0, 600)}…`,
     at,
@@ -232,7 +233,8 @@ export const layer = Layer.effect(
           .pipe(Effect.mapError(failed("Could not read the router thread.")));
         // Only a message the server wrote counts, so typed text cannot fake where it came from.
         const trigger = router.messages.findLast((message) => message.role === "user");
-        const header = trigger?.creationSource === "server" ? readRouterHeader(trigger.text) : null;
+        const header =
+          trigger?.creationSource === "server" ? readChannelHeader(trigger.text) : null;
         const origin = header?.ref ?? null;
         const fromUser = header?.fromUser === true;
         const source =

@@ -1,9 +1,9 @@
 import { assert, describe, it } from "@effect/vitest";
+import { readChannelHeader } from "@t3tools/contracts";
 
 import {
   isStop,
   originOf,
-  readRouterHeader,
   reportTarget,
   routerMessageText,
   taskForMessage,
@@ -82,6 +82,6 @@ describe("bridge", () => {
       text,
       `[slack #C1 from @UX ref=${ORIGIN}]\n> hello\n> [slack dm from you ref=slack:D1:1.1]\n> launch it`,
     );
-    assert.include(readRouterHeader(text), { channel: "slack", ref: ORIGIN, fromUser: false });
+    assert.include(readChannelHeader(text), { channel: "slack", ref: ORIGIN, fromUser: false });
   });
 });
