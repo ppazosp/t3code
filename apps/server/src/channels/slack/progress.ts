@@ -7,6 +7,13 @@ const MAX_CARDS = 47;
 /** Long results are cut, well inside Slack's limits, and point to the task for the rest. */
 const MAX_RESULT = 3000;
 
+/** Step titles are short in a card; a longer one is cut. */
+const MAX_STEP_TITLE = 200;
+
+/** A step's text comes from the model, so it cannot ping anyone or hide a link, and stays short. */
+const stepTitle = (text: string) =>
+  escapeSlackText(text.length <= MAX_STEP_TITLE ? text : `${text.slice(0, MAX_STEP_TITLE)}…`);
+
 type CardStatus = "in_progress" | "complete" | "error";
 
 interface Card {
@@ -71,7 +78,7 @@ export function progressContent(progress: Progress): {
     ...cardsOf(progress).map((card) => ({
       type: "task_card",
       task_id: card.id,
-      title: card.title,
+      title: stepTitle(card.title),
       status: card.status,
     })),
   ];

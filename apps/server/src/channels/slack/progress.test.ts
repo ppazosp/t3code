@@ -23,6 +23,14 @@ describe("progressContent", () => {
       blocks.slice(1).map((block) => block.status),
       ["complete", "in_progress", "in_progress"],
     );
+    const named = progressContent({
+      title: "Fix",
+      steps: [{ id: "1", text: `Ping <!here> ${"x".repeat(300)}`, status: "running" }],
+      finished: null,
+    });
+    const title = String(named.blocks[1]!.title);
+    assert.isTrue(title.startsWith("Ping &lt;!here&gt;"));
+    assert.isAtMost(title.length, 220);
   });
 
   it("marks unfinished steps as failed when the run fails, and adds the result as plain text", () => {
