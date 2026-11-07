@@ -16,6 +16,7 @@ super-t3 is a fork of T3 Code that turns it into a super-agent. It keeps T3's ow
   - Reply in the thread while the worker runs (in a DM, or with a mention in a channel), and your reply goes straight to the worker, which answers you there with `channel_say`. When one conversation fed several workers, your reply goes to the router instead.
   - Say "stop" in the thread (with a mention in a channel), and every worker from that thread stops, without the router.
   - Everything said in the channels you choose to watch reaches the router as information, so it can propose work from it. Work proposed from someone else's message never posts in their thread, and other people's DMs are ignored.
+  - super-t3 is a Slack agent: it has its own panel at the top of Slack, with suggested prompts. While the router or a worker works on a DM conversation, the panel shows it working, with a Stop button that does what "stop" does; it shows ready again once super-t3 answers, and waiting while a plan needs your answer. Slack shows the agent to everyone in the workspace, so anyone else who writes to it gets one reply saying it works only for you. Agents need a paid Slack plan; on a free one Slack shows super-t3 as an ordinary app.
   - Progress messages and the 👀 of unanswered messages live in memory, so a restart mid-run posts a fresh progress message for the next run.
 
 ## Add a channel
@@ -52,7 +53,7 @@ The server enforces these limits, whatever the router is told:
 
 super-t3's mark is T3 Code's desktop icon, its silver T3 on black, crowned with a wide gold crown of three points. It lives in `assets/super-t3/`: `logo.svg` with T3's rounded corners, and `slack-icon-1024.png`, full-bleed for Slack to round, to upload as the app's icon under Basic Information, Display Information.
 
-1. Create the app: go to api.slack.com/apps, choose Create New App, then From a manifest, pick your workspace, and paste `apps/server/src/channels/slack/slack-app-manifest.json`. It asks for every scope super-t3 uses, turns on Socket Mode and Interactivity, and subscribes to DMs, mentions, and messages in public and private channels the bot is in.
+1. Create the app: go to api.slack.com/apps, choose Create New App, then From a manifest, pick your workspace, and paste `apps/server/src/channels/slack/slack-app-manifest.json`. It asks for every scope super-t3 uses, turns on Socket Mode, Interactivity and Slack's agent view, and subscribes to DMs, mentions, messages in public and private channels the bot is in, and the agent panel's Stop button. An app made from an older manifest gets the same by pasting this one under App Manifest and reinstalling.
 2. Install it to the workspace (Install App). Copy the Bot User OAuth Token (`xoxb-…`).
 3. Under Basic Information, App-Level Tokens, generate a token with the `connections:write` scope. Copy it (`xapp-…`).
 4. Find your member ID: in Slack, open your profile, choose the ⋮ menu, then Copy member ID.

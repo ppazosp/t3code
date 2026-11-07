@@ -37,6 +37,8 @@ export interface MockSlack {
   readonly messages: ReadonlyArray<MockMessage>;
   /** How many Socket Mode connections are open. */
   readonly connections: () => number;
+  /** The status super-t3 last set on each agent session, by `channel:thread_ts`. */
+  readonly statuses: ReadonlyMap<string, string>;
   /** A person writes a message; returns its ts. */
   readonly say: (input: {
     readonly user: string;
@@ -53,6 +55,12 @@ export interface MockSlack {
     readonly actionId: string;
   }) => string;
   /** A person sends the form a click opened. */
+  /** A person presses Stop on an agent session in Slack's agent panel. */
+  readonly stop: (input: {
+    readonly user: string;
+    readonly channel: string;
+    readonly threadTs: string;
+  }) => void;
   readonly submit: (input: {
     readonly user: string;
     readonly triggerId: string;
@@ -76,6 +84,7 @@ export function startMockSlack(options: { readonly port?: number } = {}): Promis
   const calls: Array<MockCall> = [];
   const messages: Array<MockMessage> = [];
   const views = new Map<string, Record<string, unknown>>();
+  const statuses = new Map<string, string>();
   const sockets = new Set<NodeWS.WebSocket>();
   // Seeded from the wall clock, like Slack, so a restarted mock never repeats a message id.
   let clock = Math.floor(Date.now() / 1000);
@@ -134,6 +143,13 @@ export function startMockSlack(options: { readonly port?: number } = {}): Promis
       actions: [{ action_id: actionId, value: button.value }],
     });
     return triggerId;
+  };
+
+  const stop: MockSlack["stop"] = ({ user, channel, threadTs }) => {
+    emit("events_api", {
+      team_id: MOCK_TEAM,
+      event: { type: "agent_session_stopped", user, channel, thread_ts: threadTs },
+    });
   };
 
   const submit: MockSlack["submit"] = ({ user, triggerId, text }) => {
@@ -217,6 +233,9 @@ export function startMockSlack(options: { readonly port?: number } = {}): Promis
           })),
         };
       }
+      case "agents.sessions.setStatus":
+        statuses.set(`${String(args.channel_id)}:${String(args.thread_ts)}`, String(args.status));
+        return { ok: true };
       case "views.open":
         views.set(String(args.trigger_id), args.view as Record<string, unknown>);
         return { ok: true };
@@ -287,7 +306,7 @@ export function startMockSlack(options: { readonly port?: number } = {}): Promis
             }),
           );
         }
-        const control = ["/_mock/say", "/_mock/click", "/_mock/submit"];
+        const control = ["/_mock/say", "/_mock/click", "/_mock/submit", "/_mock/stop"];
         if (control.includes(url.pathname) && !isOwnPost(request)) {
           return send(response, 403, { ok: false, error: "forbidden" });
         }
@@ -295,6 +314,10 @@ export function startMockSlack(options: { readonly port?: number } = {}): Promis
         if (url.pathname === "/_mock/say") return send(response, 200, { ts: say(body as never) });
         if (url.pathname === "/_mock/click") {
           return send(response, 200, { triggerId: click(body as never) });
+        }
+        if (url.pathname === "/_mock/stop") {
+          stop(body as never);
+          return send(response, 200, { ok: true });
         }
         if (url.pathname === "/_mock/submit") {
           submit(body as never);
@@ -308,6 +331,7 @@ export function startMockSlack(options: { readonly port?: number } = {}): Promis
               ...message,
               reactions: [...message.reactions],
             })),
+            statuses: Object.fromEntries(statuses),
           });
         }
         if (url.pathname === "/") return send(response, 200, PAGE, "text/html; charset=utf-8");
@@ -334,6 +358,8 @@ export function startMockSlack(options: { readonly port?: number } = {}): Promis
         calls,
         messages,
         connections: () => sockets.size,
+        statuses,
+        stop,
         say,
         click,
         submit,

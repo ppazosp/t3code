@@ -43,7 +43,11 @@ export interface ChannelAnswer {
 
 export type ChannelEvent =
   | ({ readonly type: "message" } & ChannelMessage)
-  | ({ readonly type: "answer" } & ChannelAnswer);
+  | ({ readonly type: "answer" } & ChannelAnswer)
+  /** The channel's own Stop control, pressed in the conversation `ref` names. */
+  | { readonly type: "stop"; readonly ref: string; readonly fromUser: boolean }
+  /** Someone other than the user wrote to T3 directly, where T3 should say it works only for the user. */
+  | { readonly type: "outsider"; readonly ref: string };
 
 /** One message read back from a conversation, oldest first. */
 export interface ChannelHistoryEntry {
@@ -87,6 +91,15 @@ export interface ChannelAdapter {
    * or a task took it. Slack shows these as 👀 and ✅ reactions.
    */
   readonly mark: (messageId: string, mark: "seen" | "done") => Effect.Effect<void, ChannelError>;
+  /**
+   * Shows whether T3 is working on the conversation `ref` names, is done, or waits for the user,
+   * where the channel shows such a status. Slack shows it in its agent panel, with a Stop button
+   * while T3 works; elsewhere it does nothing.
+   */
+  readonly status: (
+    ref: string,
+    status: "working" | "idle" | "waiting",
+  ) => Effect.Effect<void, ChannelError>;
   /** The latest messages of the conversation `ref` names, oldest first: at most `limit`. */
   readonly read: (
     ref: string,

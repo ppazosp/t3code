@@ -87,6 +87,57 @@ export function readSlackMessage(
   );
 }
 
+/**
+ * Someone other than the user writing to T3 in a DM, such as a teammate opening its agent panel.
+ * Returns the conversation, so T3 can say once that it works only for the user.
+ */
+export function readSlackOutsider(
+  payload: unknown,
+  settings: Pick<SlackSettings, "trustedUserId">,
+  botUserId: string,
+): string | null {
+  const event = Option.flatMap(decodePayload(payload), ({ event }) => decodeEvent(event));
+  if (Option.isNone(event)) return null;
+  const message = event.value;
+  if (
+    message.channel_type !== "im" ||
+    message.bot_id !== undefined ||
+    message.subtype !== undefined ||
+    message.user === undefined ||
+    message.user === botUserId ||
+    message.user === settings.trustedUserId
+  ) {
+    return null;
+  }
+  return `slack:${message.channel}:${message.thread_ts ?? message.ts}`;
+}
+
+// Slack documents this event without a sample payload, so both spellings of its fields are read.
+const AgentSessionStopped = Schema.Struct({
+  type: Schema.Literal("agent_session_stopped"),
+  channel: Schema.optional(Schema.String),
+  channel_id: Schema.optional(Schema.String),
+  thread_ts: Schema.String,
+  user: Schema.optional(Schema.String),
+  user_id: Schema.optional(Schema.String),
+});
+const decodeStopped = Schema.decodeUnknownOption(AgentSessionStopped);
+
+/** The Stop button of Slack's agent panel, pressed while T3 worked on that conversation. */
+export function readSlackStop(
+  payload: unknown,
+  trustedUserId: string,
+): { readonly ref: string; readonly fromUser: boolean } | null {
+  const stopped = Option.flatMap(decodePayload(payload), ({ event }) => decodeStopped(event));
+  if (Option.isNone(stopped)) return null;
+  const channel = stopped.value.channel ?? stopped.value.channel_id;
+  if (channel === undefined) return null;
+  return {
+    ref: `slack:${channel}:${stopped.value.thread_ts}`,
+    fromUser: (stopped.value.user ?? stopped.value.user_id) === trustedUserId,
+  };
+}
+
 export const APPROVE_ACTION = "super_t3_approve";
 export const CHANGE_ACTION = "super_t3_change";
 /** The form Change opens; sending it answers the plan. */

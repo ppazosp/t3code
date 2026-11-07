@@ -53,10 +53,14 @@ describe("SlackAdapter against a mock Slack", () => {
         );
         assert.deepStrictEqual(
           events.map((event) =>
-            event.type === "message" ? [event.where, event.author, event.direct, event.text] : null,
+            event.type === "message"
+              ? [event.where, event.author, event.direct, event.text]
+              : event.type,
           ),
           [
             ["dm", "you", true, "fix the export"],
+            // Someone else's DM is not a request; T3 answers that it works only for the user.
+            "outsider",
             ["#eng", "you", true, "ship it"],
             ["#eng", "@Maria López", false, "checkout is broken"],
             ["dm", "you", true, "end"],
@@ -218,6 +222,24 @@ describe("SlackAdapter against a mock Slack", () => {
         assert.strictEqual(yield* post({ "content-type": "application/json" }), 200);
         assert.strictEqual(slack.messages.length, 1);
       }),
+    ),
+  );
+
+  it.live("sets the agent session's status in DMs only, and reads Stop and outsiders", () =>
+    withSlack((slack) =>
+      Effect.gen(function* () {
+        const { adapter, events } = yield* connect(slack);
+        const ts = slack.say({ user: "UME", channel: "DME", text: "fix it", dm: true });
+        yield* adapter.status(`slack:DME:${ts}`, "working");
+        yield* adapter.status(`slack:CENG:${ts}`, "working");
+        assert.deepStrictEqual([...slack.statuses], [[`DME:${ts}`, "processing"]]);
+
+        slack.stop({ user: "UME", channel: "DME", threadTs: ts });
+        slack.say({ user: "UMARIA", channel: "DMARIA", text: "hi", dm: true });
+        yield* Effect.promise(() => slack.until(() => events.length >= 3));
+        assert.deepStrictEqual(events[1], { type: "stop", ref: `slack:DME:${ts}`, fromUser: true });
+        assert.strictEqual(events[2]?.type, "outsider");
+      }).pipe(Effect.scoped, Effect.provide(FetchHttpClient.layer)),
     ),
   );
 });

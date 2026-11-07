@@ -9,6 +9,8 @@ import {
   parseSlackRef,
   readSlackInteraction,
   readSlackMessage,
+  readSlackOutsider,
+  readSlackStop,
   slackMarkdown,
 } from "./parse.ts";
 
@@ -50,6 +52,29 @@ describe("readSlackMessage", () => {
       fromUser: true,
       direct: true,
     });
+  });
+
+  it("reads someone else's DM as an outsider, and never the user's or a bot's", () => {
+    const outsider = (event: Record<string, unknown>) =>
+      readSlackOutsider(payload({ channel_type: "im", channel: "D2", ...event }), settings, BOT);
+    assert.strictEqual(outsider({ user: "UX", thread_ts: "1.5" }), "slack:D2:1.5");
+    assert.isNull(outsider({ user: "UME" }));
+    assert.isNull(outsider({ user: "UX", bot_id: "B1" }));
+    assert.isNull(readSlackOutsider(payload({ channel: "C1", user: "UX" }), settings, BOT));
+  });
+
+  it("reads the agent panel's Stop button, with either spelling of its fields", () => {
+    const stopped = (event: Record<string, unknown>) =>
+      readSlackStop({ event: { type: "agent_session_stopped", ...event } }, "UME");
+    assert.deepStrictEqual(stopped({ channel: "D1", thread_ts: "1.1", user: "UME" }), {
+      ref: "slack:D1:1.1",
+      fromUser: true,
+    });
+    assert.deepStrictEqual(stopped({ channel_id: "D1", thread_ts: "1.1", user_id: "UX" }), {
+      ref: "slack:D1:1.1",
+      fromUser: false,
+    });
+    assert.isNull(stopped({ thread_ts: "1.1" }));
   });
 
   it("ignores bots, edits, joins and empty messages", () => {

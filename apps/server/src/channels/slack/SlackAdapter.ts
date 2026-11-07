@@ -21,6 +21,8 @@ import {
   parseSlackRef,
   readSlackInteraction,
   readSlackMessage,
+  readSlackOutsider,
+  readSlackStop,
   slackMarkdown,
   slackMarkdownFits,
   SocketEnvelope,
@@ -122,6 +124,9 @@ const ignoreReactionState = <A, R>(effect: Effect.Effect<A, ChannelError, R>) =>
       () => Effect.void,
     ),
   );
+
+/** Slack's names for a session's status: "processing" shows its loading line and Stop button. */
+const SESSION_STATUS = { working: "processing", idle: "active", waiting: "suspended" } as const;
 
 /** Slack refuses a section with more than 3000 characters; a title never needs that. */
 const titleSection = (title: string) => ({
@@ -261,6 +266,16 @@ export const make = Effect.fn("SlackAdapter.make")(function* (settings: SlackSet
             continue;
           }
           if (envelope.value.type !== "events_api") continue;
+          const stop = readSlackStop(envelope.value.payload, settings.trustedUserId);
+          if (stop !== null) {
+            yield* Queue.offer(inbox, { type: "stop", ...stop });
+            continue;
+          }
+          const outsider = readSlackOutsider(envelope.value.payload, settings, botUserId);
+          if (outsider !== null) {
+            yield* Queue.offer(inbox, { type: "outsider", ref: outsider });
+            continue;
+          }
           const message = readSlackMessage(envelope.value.payload, settings, botUserId);
           // A mention arrives twice, as `message` and `app_mention`, with one id.
           if (Option.isNone(message) || seen.has(message.value.id)) continue;
@@ -367,6 +382,20 @@ export const make = Effect.fn("SlackAdapter.make")(function* (settings: SlackSet
       yield* reaction("reactions.add", "white_check_mark");
     }),
     read: readThread,
+    status: Effect.fn("SlackAdapter.status")(function* (ref, status) {
+      const target = yield* refOf(ref);
+      // Only DM threads are agent sessions; a channel thread has no session status.
+      if (!target.channel.startsWith("D")) return;
+      yield* call(
+        "agents.sessions.setStatus",
+        {
+          channel_id: target.channel,
+          thread_ts: target.threadTs,
+          status: SESSION_STATUS[status],
+        },
+        SlackOk,
+      );
+    }),
     fits: slackMarkdownFits,
     askApproval: Effect.fn("SlackAdapter.askApproval")(function* ({ ref, askId, title, text }) {
       if (!slackMarkdownFits(text)) {

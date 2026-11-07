@@ -71,6 +71,7 @@ function runBridge(input: {
   const progress: Array<{ ref: string; message: string | null; progress: Progress }> = [];
   const sent: Array<{ threadId: string; text: string }> = [];
   const marks: Array<[string, string]> = [];
+  const statuses: Array<[string, string]> = [];
   const asks: Array<{ ref: string; askId: string; text: string }> = [];
   const closed: Array<string> = [];
   const dispatched: Array<Record<string, unknown>> = [];
@@ -81,6 +82,7 @@ function runBridge(input: {
     events: Stream.fromIterable(input.channel ?? []),
     post: (ref, text) => Effect.sync(() => void posts.push({ ref, text })),
     mark: (id, mark) => Effect.sync(() => void marks.push([id, mark])),
+    status: (ref, status) => Effect.sync(() => void statuses.push([ref, status])),
     read: () => Effect.succeed([]),
     fits: (text) => text.length < 1000,
     askApproval: (call) =>
@@ -117,7 +119,7 @@ function runBridge(input: {
   const engine = { streamDomainEvents: Stream.fromIterable(input.events ?? []) } as never;
   const state = input.state ?? ChannelBridge.makeState();
   return ChannelBridge.run({ adapters: [adapter], threads, engine, state }).pipe(
-    Effect.as({ posts, progress, sent, marks, asks, closed, dispatched, stopped, state }),
+    Effect.as({ posts, progress, sent, marks, statuses, asks, closed, dispatched, stopped, state }),
   );
 }
 
@@ -290,6 +292,61 @@ describe("ChannelBridge", () => {
         channel: [answer()],
       });
       assert.deepStrictEqual([stale.dispatched, stale.closed], [[], []]);
+    }),
+  );
+
+  it.effect(
+    "shows the router working on the user's request, and a report's run until it ends",
+    () =>
+      Effect.gen(function* () {
+        const asked = yield* runBridge({ channel: [message("slack:D1:1700000000.000900")] });
+        assert.deepStrictEqual(asked.statuses, [["slack:D1:1700000000.000900", "working"]]);
+
+        const reported = yield* runBridge({
+          existing: [userTask],
+          plans: [activePlan],
+          events: [runEvent("run.created", "running"), runEvent("run.updated", "completed")],
+        });
+        // The run ended with a plan to approve, so the conversation waits for the user.
+        assert.deepStrictEqual(reported.statuses, [
+          [ORIGIN, "working"],
+          [ORIGIN, "waiting"],
+        ]);
+      }),
+  );
+
+  it.effect("stops a conversation's tasks from the channel's Stop button, only for the user", () =>
+    Effect.gen(function* () {
+      const { stopped, statuses, sent } = yield* runBridge({
+        existing: [thread("router", { tags: ["router"] }), thread("task", { tags: [ORIGIN] })],
+        channel: [
+          { type: "stop", ref: ORIGIN, fromUser: false },
+          { type: "stop", ref: ORIGIN, fromUser: true },
+        ],
+      });
+      assert.deepStrictEqual(stopped, ["task"]);
+      assert.deepStrictEqual(statuses, [[ORIGIN, "idle"]]);
+      assert.deepStrictEqual(sent, []);
+    }),
+  );
+
+  it.effect("tells anyone else once per conversation that it works only for the user", () =>
+    Effect.gen(function* () {
+      const { posts, sent } = yield* runBridge({
+        channel: [
+          { type: "outsider", ref: "slack:D2:1.1" },
+          { type: "outsider", ref: "slack:D2:1.1" },
+          { type: "outsider", ref: "slack:D2:2.2" },
+        ],
+      });
+      assert.deepStrictEqual(
+        posts.map((post) => [post.ref, post.text]),
+        [
+          ["slack:D2:1.1", ChannelBridge.OUTSIDER_NOTE],
+          ["slack:D2:2.2", ChannelBridge.OUTSIDER_NOTE],
+        ],
+      );
+      assert.deepStrictEqual(sent, []);
     }),
   );
 });

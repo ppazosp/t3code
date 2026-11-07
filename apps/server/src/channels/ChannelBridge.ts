@@ -18,6 +18,7 @@ import type * as ThreadManagementService from "../orchestration-v2/ThreadManagem
 import type {
   ChannelAdapter,
   ChannelAnswer,
+  ChannelEvent,
   ChannelMessage,
   Progress,
   ProgressStep,
@@ -119,7 +120,21 @@ export const markHandled = Effect.fn("ChannelBridge.markHandled")(function* (
         ),
       );
   }
+  yield* setStatus(adapter, ref, "idle");
 });
+
+const setStatus = (adapter: ChannelAdapter, ref: string, status: "working" | "idle" | "waiting") =>
+  adapter
+    .status(ref, status)
+    .pipe(
+      Effect.catchCause((cause) =>
+        Effect.logWarning("Could not show a conversation's status", { cause }),
+      ),
+    );
+
+/** What T3 says, once per conversation, to anyone but the user who writes to it directly. */
+export const OUTSIDER_NOTE =
+  "This super-t3 works only for the person who set it up, so it did not act on your message.";
 
 /** One approved run being reported in its channel. */
 interface RunReport {
@@ -181,21 +196,21 @@ export const run = Effect.fn("ChannelBridge.run")(function* (input: {
 
   const stop = Effect.fn("ChannelBridge.stop")(function* (
     adapter: ChannelAdapter,
-    message: ChannelMessage,
+    ref: string,
+    key: string,
     tasks: ReadonlyArray<BridgeThread>,
   ) {
-    yield* mark(adapter, message.id, "seen");
     for (const task of tasks) {
       yield* threads
         .interruptThread({
           projectId: task.projectId as OrchestrationV2ThreadShell["projectId"],
-          commandId: CommandId.make(`${message.id}:stop:${task.id}`),
+          commandId: CommandId.make(`${key}:stop:${task.id}`),
           threadId: task.id as OrchestrationV2ThreadShell["id"],
           reason: "The user said stop in the channel.",
         })
         .pipe(Effect.catchCause((cause) => Effect.logWarning("Could not stop a task", { cause })));
     }
-    yield* mark(adapter, message.id, "done");
+    yield* setStatus(adapter, ref, "idle");
   });
 
   const deliver = Effect.fn("ChannelBridge.deliver")(
@@ -203,7 +218,11 @@ export const run = Effect.fn("ChannelBridge.run")(function* (input: {
       const request = message.fromUser && message.direct;
       if (isStop(message)) {
         const tasks = tasksFrom(message.ref, known.values(), prefixes);
-        if (tasks.length > 0) return yield* stop(adapter, message, tasks);
+        if (tasks.length > 0) {
+          yield* mark(adapter, message.id, "seen");
+          yield* stop(adapter, message.ref, message.id, tasks);
+          return yield* mark(adapter, message.id, "done");
+        }
       }
       const task = taskForMessage(message, known.values(), prefixes);
       const target =
@@ -214,8 +233,9 @@ export const run = Effect.fn("ChannelBridge.run")(function* (input: {
         );
         return;
       }
-      // 👀 straight away, before any model runs.
+      // 👀 straight away, before any model runs, and the router shown working until it answers.
       if (request) yield* mark(adapter, message.id, "seen");
+      if (request && task === null) yield* setStatus(adapter, message.ref, "working");
       yield* threads.sendToThread({
         projectId: target.projectId as OrchestrationV2ThreadShell["projectId"],
         // The message's own id, so a redelivered message is the same command.
@@ -336,14 +356,14 @@ export const run = Effect.fn("ChannelBridge.run")(function* (input: {
   const askForPlan = Effect.fn("ChannelBridge.askForPlan")(
     function* (report: RunReport, runId: string) {
       const found = yield* actionablePlan(report.threadId, null);
-      if (found === null || found.plan.runId !== runId) return;
+      if (found === null || found.plan.runId !== runId) return false;
       const { plan } = found;
       if (!report.adapter.fits(plan.markdown)) {
         yield* report.adapter.post(
           report.ref,
           "The plan is too long to show here. Review it in T3 to approve it.",
         );
-        return;
+        return true;
       }
       yield* report.adapter.askApproval({
         ref: report.ref,
@@ -351,10 +371,35 @@ export const run = Effect.fn("ChannelBridge.run")(function* (input: {
         title: report.title,
         text: plan.markdown,
       });
+      return true;
     },
     Effect.catchCause((cause) =>
-      Effect.logWarning("Could not post a plan for approval", { cause }),
+      Effect.logWarning("Could not post a plan for approval", { cause }).pipe(Effect.as(false)),
     ),
+  );
+
+  // Conversations already told that T3 works only for the user.
+  const toldOutsiders = new Set<string>();
+  const onChannelEvent = Effect.fn("ChannelBridge.onChannelEvent")(
+    function* (adapter: ChannelAdapter, event: ChannelEvent) {
+      if (event.type === "message") return yield* deliver(adapter, event);
+      if (event.type === "answer") return yield* answer(adapter, event);
+      if (event.type === "stop") {
+        if (!event.fromUser) return;
+        return yield* stop(
+          adapter,
+          event.ref,
+          `${event.ref}:stop-button`,
+          tasksFrom(event.ref, known.values(), prefixes),
+        );
+      }
+      if (toldOutsiders.has(event.ref)) return;
+      toldOutsiders.add(event.ref);
+      if (toldOutsiders.size > LIMIT) toldOutsiders.delete(toldOutsiders.values().next().value!);
+      yield* adapter.post(event.ref, OUTSIDER_NOTE);
+      yield* setStatus(adapter, event.ref, "idle");
+    },
+    Effect.catchCause((cause) => Effect.logWarning("Could not handle a channel event", { cause })),
   );
 
   const show = (report: RunReport, finished: Progress["finished"]) =>
@@ -374,6 +419,7 @@ export const run = Effect.fn("ChannelBridge.run")(function* (input: {
     const adapter = ref === null ? undefined : adapterFor(ref);
     if (ref === null || adapter === undefined) return;
     const progress: Progress = { title: thread.title, steps: [], finished: null };
+    yield* setStatus(adapter, ref, "working");
     const message = yield* adapter.showProgress({ ref, message: null, progress });
     reports.set(runId, {
       adapter,
@@ -405,7 +451,8 @@ export const run = Effect.fn("ChannelBridge.run")(function* (input: {
     reports.delete(runRecord.id);
     activeRuns.delete(runRecord.threadId);
     yield* show(report, { outcome, result: report.result });
-    if (outcome === "completed") yield* askForPlan(report, runRecord.id);
+    const asked = outcome === "completed" ? yield* askForPlan(report, runRecord.id) : false;
+    yield* setStatus(report.adapter, report.ref, asked ? "waiting" : "idle");
   });
 
   const onEvent = Effect.fn("ChannelBridge.onEvent")(
@@ -447,9 +494,7 @@ export const run = Effect.fn("ChannelBridge.run")(function* (input: {
   yield* Effect.all(
     [
       ...adapters.map((adapter) =>
-        Stream.runForEach(adapter.events, (event) =>
-          event.type === "message" ? deliver(adapter, event) : answer(adapter, event),
-        ),
+        Stream.runForEach(adapter.events, (event) => onChannelEvent(adapter, event)),
       ),
       Stream.runForEach(engine.streamDomainEvents, onEvent),
     ],
