@@ -76,7 +76,8 @@ export function startMockSlack(options: { readonly port?: number } = {}): Promis
   const messages: Array<MockMessage> = [];
   const views = new Map<string, Record<string, unknown>>();
   const sockets = new Set<NodeWS.WebSocket>();
-  let clock = 1_700_000_000;
+  // Seeded from the wall clock, like Slack, so a restarted mock never repeats a message id.
+  let clock = Math.floor(Date.now() / 1000);
   let seq = 0;
   const nextTs = () => `${++clock}.${String(++seq).padStart(6, "0")}`;
   const find = (channel: string, ts: string) =>
