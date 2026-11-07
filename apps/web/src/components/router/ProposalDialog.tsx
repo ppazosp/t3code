@@ -38,7 +38,7 @@ import { Textarea } from "../ui/textarea";
 import { toastManager } from "../ui/toast";
 import { SETTINGS_PICKER_TRIGGER_CLASSNAME } from "../settings/settingsLayout";
 import { WorktreeBaseBranchPicker } from "../WorktreeBaseBranchPicker";
-import type { ProposalActions } from "./ProposalsSection";
+import type { ProposalActions } from "./RouterSection";
 
 type WorkspaceMode = OrchestrationV2ThreadLaunchWorkspaceStrategy["type"];
 

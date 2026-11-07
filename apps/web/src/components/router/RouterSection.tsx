@@ -1,6 +1,12 @@
-import { isProposalTask, type ScheduledTask } from "@t3tools/contracts";
-import { LightbulbIcon, XIcon } from "lucide-react";
+import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { isProposalTask, ROUTER_TAG, type ScheduledTask } from "@t3tools/contracts";
+import { useNavigate } from "@tanstack/react-router";
+import { LightbulbIcon, RouteIcon, XIcon } from "lucide-react";
 import { useState } from "react";
+
+import { useThreadRouteTarget } from "../../hooks/useThreadRouteTarget";
+import { useThreadShells } from "../../state/entities";
+import { buildThreadRouteParams } from "../../threadRoutes";
 
 import { useEnvironment, usePrimaryEnvironmentId } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
@@ -13,12 +19,21 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ProposalDialog } from "./ProposalDialog";
 
 /**
- * The router's proposals, above the threads: work it suggests, waiting for the user. Each opens with
- * the project, workspace, model and effort the router chose, to change before accepting. Accepting
- * happens only there, with the brief and folder in view: the router reads channel messages anyone
- * can write, and an accepted proposal runs with full access.
+ * The router and its proposals, above the threads; the list shows even when empty. Accepting happens
+ * only in a proposal's editor, with the brief and folder in view: the router reads channel messages
+ * anyone can write, and an accepted proposal runs with full access.
  */
-export function ProposalsSection() {
+export function RouterSection() {
+  const navigate = useNavigate();
+  const routeTarget = useThreadRouteTarget();
+  const router = useThreadShells().find(
+    (thread) => thread.source.tags?.includes(ROUTER_TAG) === true && thread.archivedAt === null,
+  );
+  const routerActive =
+    router !== undefined &&
+    routeTarget?.kind === "server" &&
+    scopedThreadKey(routeTarget.threadRef) ===
+      scopedThreadKey(scopeThreadRef(router.environmentId, router.id));
   const environmentId = usePrimaryEnvironmentId();
   const environment = useEnvironment(environmentId);
   const connected =
@@ -32,14 +47,35 @@ export function ProposalsSection() {
   const [openId, setOpenId] = useState<string | null>(null);
   const proposals = (tasks.data?.tasks ?? []).filter(isProposalTask);
   const open = proposals.find((task) => task.id === openId) ?? null;
-  if (environmentId === null || proposals.length === 0) return null;
+  if (environmentId === null || router === undefined) return null;
 
   return (
     <SidebarGroup>
+      <SidebarMenu>
+        <SidebarMenuItem>
+          <SidebarMenuButton
+            isActive={routerActive}
+            onClick={() =>
+              void navigate({
+                to: "/$environmentId/$threadId",
+                params: buildThreadRouteParams(scopeThreadRef(router.environmentId, router.id)),
+              })
+            }
+          >
+            <RouteIcon />
+            <span>Router</span>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      </SidebarMenu>
       <h2 className="flex h-7 items-center gap-1.5 px-2.5 text-xs font-medium text-sidebar-muted-foreground">
         Proposals
         <span className="tabular-nums opacity-60">{proposals.length}</span>
       </h2>
+      {proposals.length === 0 ? (
+        <p className="px-2.5 pb-1 text-xs text-sidebar-muted-foreground/70">
+          Nothing proposed. The router adds work here for you to accept.
+        </p>
+      ) : null}
       <SidebarMenu>
         {proposals.map((task) => (
           <SidebarMenuItem key={task.id} className="group/proposal">
