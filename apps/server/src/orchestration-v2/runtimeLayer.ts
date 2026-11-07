@@ -49,6 +49,7 @@ import * as RunExecutionService from "./RunExecutionService.ts";
 import * as RunFinalizationService from "./RunFinalizationService.ts";
 import * as ResourceCleanupService from "./ResourceCleanupService.ts";
 import * as RuntimePolicy from "./RuntimePolicy.ts";
+import * as ChannelRuntimePolicy from "../channels/ChannelRuntimePolicy.ts";
 import * as RouterRuntimePolicy from "../router/RouterRuntimePolicy.ts";
 import * as RuntimeRequestService from "./RuntimeRequestService.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
@@ -63,7 +64,8 @@ export const layerEventInfrastructure = Layer.mergeAll(
   OrchestrationCommandReceipts.layer,
 );
 
-const layerRuntimePolicyProvided = RouterRuntimePolicy.layer.pipe(
+const layerRuntimePolicyProvided = ChannelRuntimePolicy.layer.pipe(
+  Layer.provide(RouterRuntimePolicy.layer),
   Layer.provide(RuntimePolicy.layerFromProjectStore),
   Layer.provide(ProjectStore.layer),
 );

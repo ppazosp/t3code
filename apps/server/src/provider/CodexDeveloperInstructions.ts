@@ -58,3 +58,28 @@ export function buildCodexAdditionalContext(
     ...(tools ? { t3_code_tools: { kind: "application", value: tools } } : {}),
   };
 }
+
+/** A thread's own instructions, split by paragraph into entries Codex keeps whole. */
+export function buildCodexThreadContext(
+  instructions: string,
+): Record<string, V2TurnStartParams__AdditionalContextEntry> {
+  const bytes = (text: string) => new TextEncoder().encode(text).length;
+  const entries: Array<string> = [];
+  for (const paragraph of instructions.split("\n\n")) {
+    const last = entries.at(-1);
+    if (
+      last !== undefined &&
+      bytes(`${last}\n\n${paragraph}`) <= CODEX_ADDITIONAL_CONTEXT_VALUE_MAX_BYTES
+    ) {
+      entries[entries.length - 1] = `${last}\n\n${paragraph}`;
+    } else {
+      entries.push(paragraph);
+    }
+  }
+  return Object.fromEntries(
+    entries.map((value, index) => [
+      `t3_code_thread_${String(index + 1).padStart(2, "0")}`,
+      { kind: "application" as const, value },
+    ]),
+  );
+}

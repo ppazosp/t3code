@@ -61,6 +61,11 @@ export const ProviderAdapterV2RuntimePolicy = Schema.Struct({
    * make the provider ask. Set for the router, whose shell is read-only and whose work is these.
    */
   t3ToolAllowlist: Schema.optional(Schema.Array(Schema.String)),
+  /**
+   * Trusted system instructions for this thread, added after T3 Code's own. Codex and Claude take
+   * them; other providers ignore them.
+   */
+  instructions: Schema.optional(Schema.String),
 });
 export type ProviderAdapterV2RuntimePolicy = typeof ProviderAdapterV2RuntimePolicy.Type;
 

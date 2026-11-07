@@ -5,6 +5,7 @@ import { describe, it } from "vite-plus/test";
 
 import {
   buildCodexAdditionalContext,
+  buildCodexThreadContext,
   CODEX_ADDITIONAL_CONTEXT_VALUE_MAX_BYTES,
 } from "./CodexDeveloperInstructions.ts";
 
@@ -28,6 +29,17 @@ describe("buildCodexAdditionalContext", () => {
         }
       },
     );
+  });
+});
+
+describe("buildCodexThreadContext", () => {
+  it("keeps a thread's instructions whole in paragraphs under Codex's per-entry cap", () => {
+    const paragraph = "x".repeat(1500);
+    const context = buildCodexThreadContext([paragraph, paragraph, paragraph, "end"].join("\n\n"));
+    NodeAssert.deepEqual(Object.keys(context), ["t3_code_thread_01", "t3_code_thread_02"]);
+    NodeAssert.equal(context.t3_code_thread_01!.value, `${paragraph}\n\n${paragraph}`);
+    NodeAssert.equal(context.t3_code_thread_02!.value, `${paragraph}\n\nend`);
+    NodeAssert.equal(context.t3_code_thread_01!.kind, "application");
   });
 });
 

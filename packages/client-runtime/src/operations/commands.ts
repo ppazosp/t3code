@@ -169,6 +169,8 @@ interface StartThreadBootstrap {
     readonly startFromOrigin?: boolean;
   };
   readonly runSetupScript?: boolean;
+  /** Tags the new thread gets before its first turn starts. */
+  readonly tags?: ReadonlyArray<ThreadTag>;
 }
 
 export interface StartThreadTurnInput extends ThreadCommandInput {
@@ -738,6 +740,7 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
       runtimeMode: input.runtimeMode,
       interactionMode: input.interactionMode,
       workspaceStrategy,
+      ...(input.bootstrap?.tags === undefined ? {} : { tags: input.bootstrap.tags }),
       initialMessage: {
         messageId: input.message.messageId,
         text: input.message.text,

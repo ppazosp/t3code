@@ -632,6 +632,7 @@ describe("ClaudeAdapterV2 native protocol logging", () => {
       allowedTools: overrides.allowedTools ?? [],
       mcpServers: overrides.mcpServers ?? {},
       environment: {},
+      threadInstructions: "# Working from a Slack conversation",
     });
     assert.isObject(options.systemPrompt);
     const systemPrompt = options.systemPrompt as {
@@ -644,6 +645,11 @@ describe("ClaudeAdapterV2 native protocol logging", () => {
     assert.include(systemPrompt.append ?? "", "Use `delegate_task`");
     assert.include(systemPrompt.append ?? "", "call `t3_background_wait`");
     assert.notInclude(systemPrompt.append ?? "", "## T3 Code devices");
+    // The thread's own instructions come after T3 Code's.
+    assert.match(
+      systemPrompt.append ?? "",
+      /delegate_task[\s\S]*# Working from a Slack conversation/u,
+    );
     const logged = ClaudeAdapterV2.loggedClaudeQueryOptions(options);
     assert.equal(logged.hasMcpServers, true);
     assert.notInclude(JSON.stringify(logged), "secret-claude-token");

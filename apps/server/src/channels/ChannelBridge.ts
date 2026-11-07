@@ -22,7 +22,6 @@ import {
   startText,
   taskMessageText,
   tasksFrom,
-  UNREAD_LIMIT,
   type BridgeThread,
 } from "./bridge.ts";
 
@@ -210,7 +209,6 @@ export const run = Effect.fn("ChannelBridge.run")(function* (input: {
     const since = (index === -1 ? history : history.slice(index + 1)).filter(
       (entry) => !entry.bot && entry.id !== message.id,
     );
-    const unread = since.slice(-UNREAD_LIMIT);
     const planning = task.interactionMode === "plan";
     const threadId = task.id as OrchestrationV2ThreadShell["id"];
     // A planning task answered by the user goes on to do the work, or to plan again.
@@ -230,8 +228,7 @@ export const run = Effect.fn("ChannelBridge.run")(function* (input: {
       text: taskMessageText({
         channel: adapter.name,
         text: message.text,
-        unread,
-        skipped: since.length - unread.length,
+        unread: since.length,
         planning,
       }),
       attachments: [],

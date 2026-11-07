@@ -9,6 +9,7 @@ import { slackChannel } from "./slack/SlackChannel.ts";
 /** A channel T3 knows, with its settings already read: connecting gives its adapter, if it is on. */
 export interface RegisteredChannel {
   readonly name: string;
+  readonly instructions?: string | undefined;
   readonly connect: Effect.Effect<
     Option.Option<ChannelAdapter>,
     never,
@@ -18,6 +19,7 @@ export interface RegisteredChannel {
 
 const register = <Settings>(definition: ChannelDefinition<Settings>): RegisteredChannel => ({
   name: definition.name,
+  instructions: definition.instructions,
   connect: Effect.gen(function* () {
     const settings: Option.Option<Settings> = yield* definition.settings.pipe(
       Effect.catchCause((cause) =>

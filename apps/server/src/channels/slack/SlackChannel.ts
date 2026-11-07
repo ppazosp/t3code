@@ -10,6 +10,12 @@ import * as SlackAdapter from "./SlackAdapter.ts";
  */
 export const slackChannel: ChannelDefinition<SlackSettings> = {
   name: "slack",
+  instructions: `Slack shows Markdown: bold, italics, lists, code and links. Headings show as bold text, and mentions do not notify anyone. People read your messages in a thread, so keep them short.
+
+To draw a chart, write a fenced code block with the language \`chart\`, holding one JSON object. Slack draws at most 2 per message.
+- Pie: {"kind":"pie","title":"Orders by state","segments":[{"label":"Shipped","value":12},{"label":"Late","value":3}]}
+- Bar, line or area: {"kind":"bar","title":"Requests per day","categories":["Mon","Tue"],"series":[{"name":"Requests","values":[4,7]}],"yLabel":"req/s"}
+Titles take up to 50 characters; labels, categories and series names up to 20. Up to 12 segments or series, and 20 categories. A chart that does not fit shows as code.`,
   settings: Config.all({
     botToken: Config.option(Config.String("T3_SLACK_BOT_TOKEN")),
     appToken: Config.option(Config.String("T3_SLACK_APP_TOKEN")),

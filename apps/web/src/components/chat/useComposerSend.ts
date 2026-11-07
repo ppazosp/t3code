@@ -16,12 +16,14 @@ import {
 } from "../ChatView.logic";
 import { isUsageLimitsCommand } from "@t3tools/shared/usageLimits";
 import {
+  ACCEPTED_TAG_PREFIX,
   AuthOrchestrationOperateScope,
   DEFAULT_MODEL,
   type EnvironmentId,
   type ModelSelection,
   type PreviewAnnotationPayload,
   type ThreadId,
+  type ThreadTag,
   ProviderInteractionMode,
   RuntimeMode,
 } from "@t3tools/contracts";
@@ -144,6 +146,7 @@ import type { useQueuedRunEdit } from "./useQueuedRunEdit";
 import type { useTimelineFollow } from "./useTimelineFollow";
 import type { useUsageLimitsPanel } from "./useUsageLimitsPanel";
 import type { useWorktreeSetup } from "./useWorktreeSetup";
+import { readProposalDrafts } from "../router/proposalDrafts";
 
 const ENVIRONMENT_UNAVAILABLE_SEND_TOAST_TRAIL_SIZE = 3;
 
@@ -1310,9 +1313,15 @@ export function useComposerSend(input: ComposerSendInput) {
     let backgroundDraftOpened = false;
     let turnStartSucceeded = false;
     if (failure === null && turnAttachmentsResult._tag === "Success") {
+      // A proposal's thread is marked accepted before its first turn, which then knows where it came from.
+      const proposalTaskId =
+        isLocalDraftThread && draftId !== null ? readProposalDrafts()[draftId]?.taskId : undefined;
       const bootstrap =
         isLocalDraftThread || baseBranchForWorktree
           ? {
+              ...(proposalTaskId === undefined
+                ? {}
+                : { tags: [`${ACCEPTED_TAG_PREFIX}${proposalTaskId}` as ThreadTag] }),
               ...(isLocalDraftThread
                 ? {
                     createThread: {

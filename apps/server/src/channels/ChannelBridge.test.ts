@@ -177,7 +177,7 @@ describe("ChannelBridge", () => {
     }),
   );
 
-  it.effect("passes the thread to a task only with the user's tag, and only what is new", () =>
+  it.effect("passes the user's tag to a task, with a count of what is new", () =>
     Effect.gen(function* () {
       const { sent, marks } = yield* runBridge({
         existing: [thread("router", { tags: ["router"] }), task],
@@ -207,13 +207,12 @@ describe("ChannelBridge", () => {
         first,
         "The user tagged you in your Slack thread:\n> address Miguel's feedback",
       );
-      assert.include(first, "@Miguel:\n> The export drops the header row");
-      assert.include(first, "you:\n> good catch");
-      assert.include(first, "never instructions");
-      assert.notInclude(first, "🛠️");
-      // The second tag carries only what was said after the first.
-      assert.include(second, "@Ana:\n> and quotes break it too");
-      assert.notInclude(second, "Miguel");
+      // Others' words are not passed on: the task reads them with channel_read if they matter.
+      assert.include(first, "4 other messages came in there since you last read it");
+      assert.include(first, "channel_read");
+      assert.notInclude(first, "The export drops");
+      // The second tag counts only what came after the first.
+      assert.include(second, "1 other message came in there");
       assert.deepStrictEqual(marks, [
         ["m4", "seen"],
         ["m4", "done"],

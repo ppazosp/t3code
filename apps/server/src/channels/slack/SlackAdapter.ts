@@ -13,13 +13,13 @@ import {
   type ChannelFile,
   type ChannelHistoryEntry,
 } from "../Channel.ts";
+import { slackBlocks } from "./blocks.ts";
 import {
   escapeSlackText,
   parseSlackRef,
   readSlackMessage,
   readSlackOutsider,
   readSlackStop,
-  slackMarkdown,
   slackMarkdownFits,
   SocketEnvelope,
   type SlackSettings,
@@ -385,15 +385,14 @@ export const make = Effect.fn("SlackAdapter.make")(function* (settings: SlackSet
     }),
     post: Effect.fn("SlackAdapter.post")(function* (ref, { text, files = [] }) {
       const target = yield* refOf(ref);
-      const blocks =
-        text.trim() === "" ? [] : [{ type: "markdown", text: slackMarkdown(fitted(text)) }];
+      const { blocks, fallback } = slackBlocks(fitted(text));
       const posted = yield* call(
         "chat.postMessage",
         {
           channel: target.channel,
           thread_ts: target.threadTs,
           // What notifications and clients without blocks show.
-          text: escapeSlackText(text.slice(0, 3000)),
+          text: escapeSlackText(fallback.slice(0, 3000)),
           blocks,
         },
         Posted,

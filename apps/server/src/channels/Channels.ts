@@ -45,6 +45,11 @@ export interface ChannelsShape {
     ref: string,
     limit: number,
   ) => Effect.Effect<ReadonlyArray<ChannelHistoryEntry>, ChannelError>;
+  /** The latest messages of the conversation a task came from, and of no other. */
+  readonly readTask: (
+    threadId: ThreadId,
+    limit: number,
+  ) => Effect.Effect<ReadonlyArray<ChannelHistoryEntry>, ChannelError>;
 }
 
 /**
@@ -168,6 +173,11 @@ export const layer: Layer.Layer<
         );
       }),
       read: Effect.fn("Channels.read")(function* (ref, limit) {
+        const adapter = yield* adapterFor(ref);
+        return yield* adapter.read(ref, Math.max(1, Math.min(limit, 100)));
+      }),
+      readTask: Effect.fn("Channels.readTask")(function* (threadId, limit) {
+        const { ref } = yield* taskConversation(threadId);
         const adapter = yield* adapterFor(ref);
         return yield* adapter.read(ref, Math.max(1, Math.min(limit, 100)));
       }),

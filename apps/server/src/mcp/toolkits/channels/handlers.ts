@@ -49,13 +49,20 @@ const handlers = {
   ),
   channel_read: McpToolAccess.readsAsCaller((input) =>
     Effect.gen(function* () {
-      if (!(yield* caller("channel_read")).router) {
-        return yield* failure("Only the router thread can read channels.");
-      }
+      const self = yield* caller("channel_read");
       const channels = yield* Channels.Channels;
-      const messages = yield* channels
-        .read(input.ref, input.limit ?? 30)
-        .pipe(Effect.mapError((error) => failure(error.message)));
+      // A worker reads only the conversation its task came from.
+      if (!self.router && input.ref !== undefined) {
+        return yield* failure("Workers read their own conversation: leave out ref.");
+      }
+      if (self.router && input.ref === undefined) {
+        return yield* failure("Give the ref from the message header.");
+      }
+      const messages = yield* (
+        input.ref === undefined
+          ? channels.readTask(self.threadId, input.limit ?? 30)
+          : channels.read(input.ref, input.limit ?? 30)
+      ).pipe(Effect.mapError((error) => failure(error.message)));
       return { messages };
     }),
   ),

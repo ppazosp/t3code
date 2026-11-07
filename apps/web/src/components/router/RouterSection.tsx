@@ -4,14 +4,11 @@ import {
   scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
 import {
-  ACCEPTED_TAG_PREFIX,
   type EnvironmentId,
   isProposalTask,
   readProposalSource,
   ROUTER_TAG,
   type ScheduledTask,
-  type ThreadId,
-  type ThreadTag,
 } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { ChevronRightIcon, RouteIcon } from "lucide-react";
@@ -26,9 +23,7 @@ import { useThreadShells } from "../../state/entities";
 import { useEnvironment, usePrimaryEnvironmentId } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
-import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { buildThreadRouteParams } from "../../threadRoutes";
 import { SidebarGroup, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "../ui/sidebar";
 import { ProposalRow } from "./ProposalRow";
@@ -73,31 +68,21 @@ export function RouterSection() {
   const { environmentId, proposals } = useProposals();
   const actions = useProposalActions();
   const openProposal = useOpenProposal();
-  const setTag = useOrchestrationCommand(threadEnvironment.setTag);
   const [proposalsOpen, setProposalsOpen] = useLocalStorage(
     "super-t3:proposals-open",
     true,
     Schema.Boolean,
   );
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- tells the server which proposal a sent draft accepted, once its thread exists
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- forgets a proposal's draft once its thread exists; the send already tagged it accepted
   useEffect(() => {
     for (const [draftId, entry] of Object.entries(readProposalDrafts())) {
       const sent = threads.some(
         (thread) => thread.id === entry.threadId && thread.environmentId === entry.environmentId,
       );
-      if (!sent) continue;
-      forgetProposalDraft(draftId);
-      void setTag({
-        environmentId: entry.environmentId as EnvironmentId,
-        input: {
-          threadId: entry.threadId as ThreadId,
-          tag: `${ACCEPTED_TAG_PREFIX}${entry.taskId}` as ThreadTag,
-          tagged: true,
-        },
-      });
+      if (sent) forgetProposalDraft(draftId);
     }
-  }, [threads, setTag]);
+  }, [threads]);
 
   if (environmentId === null || router === undefined) return null;
   const activeDraftId = routeTarget?.kind === "draft" ? routeTarget.draftId : null;

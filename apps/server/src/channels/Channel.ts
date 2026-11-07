@@ -107,6 +107,11 @@ export interface ChannelAdapter {
  */
 export interface ChannelDefinition<Settings> {
   readonly name: string;
+  /**
+   * What a worker should know about writing in this channel, such as formats it draws beyond plain
+   * Markdown. Added to the system prompt of every worker whose task came from it.
+   */
+  readonly instructions?: string;
   readonly settings: Config.Config<Option.Option<Settings>>;
   readonly make: (
     settings: Settings,
