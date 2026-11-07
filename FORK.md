@@ -44,13 +44,13 @@ The server enforces these limits, whatever the router is told:
 - It gets only these T3 tools: `orchestrator_capabilities`, `t3_project_list`, `t3_project_read`, `t3_thread_list`, `t3_thread_read`, `t3_thread_search`, `list_scheduled_tasks`, `propose_task`, `channel_reply` and `channel_read`. They run without asking. Codex shows it only these, and T3's server refuses any other tool a router thread calls. It cannot start, message or delegate to a thread.
 - `propose_task` only creates a paused proposal. Where a proposal came from is read from the router's last message, and only from a header the channel adapter wrote, so text in a message cannot fake it.
 - `channel_reply` answers only messages you sent. Messages from other people reach the router quoted, as information. `channel_read` reads a conversation the bot can see.
-- Workers get `channel_say`, which posts only in the conversation their task came from.
+- Workers get `channel_say`, which posts only in the conversation their task came from. It can attach up to 10 images or videos, only from the worker's own folder (links followed), recognised by their content, and within the channel's own size limit (Slack: 1 GB).
 
 ## Turn on Slack
 
 super-t3's mark is T3 Code's desktop icon, its silver T3 on black, crowned with a wide gold crown of three points. It lives in `assets/super-t3/`: `logo.svg` with T3's rounded corners, and `slack-icon-1024.png`, full-bleed for Slack to round, to upload as the app's icon under Basic Information, Display Information.
 
-1. Create the app: go to api.slack.com/apps, choose Create New App, then From a manifest, pick your workspace, and paste `apps/server/src/channels/slack/slack-app-manifest.json`. It asks for every scope super-t3 uses, turns on Socket Mode and Slack's agent view, and subscribes to DMs, mentions, messages in public and private channels the bot is in, and the agent panel's Stop button. An app made from an older manifest gets the same by pasting this one under App Manifest and reinstalling.
+1. Create the app: go to api.slack.com/apps, choose Create New App, then From a manifest, pick your workspace, and paste `apps/server/src/channels/slack/slack-app-manifest.json`. It asks for every scope super-t3 uses, turns on Socket Mode and Slack's agent view, and subscribes to DMs, mentions, messages in public and private channels the bot is in, and the agent panel's Stop button. It also uploads files, for workers' screenshots and videos. An app made from an older manifest gets the same by pasting this one under App Manifest and reinstalling.
 2. Install it to the workspace (Install App). Copy the Bot User OAuth Token (`xoxb-…`).
 3. Under Basic Information, App-Level Tokens, generate a token with the `connections:write` scope. Copy it (`xapp-…`).
 4. Find your member ID: in Slack, open your profile, choose the ⋮ menu, then Copy member ID.

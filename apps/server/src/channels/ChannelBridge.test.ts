@@ -73,6 +73,7 @@ function runBridge(input: {
     name: "slack",
     prefix: "slack:",
     events: Stream.fromIterable(input.channel ?? []),
+    fileLimit: 0,
     post: (ref, post) =>
       Effect.sync(() => {
         posts.push({ ref, text: post.text });

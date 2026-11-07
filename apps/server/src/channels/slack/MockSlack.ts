@@ -22,6 +22,8 @@ export interface MockMessage {
   readonly user: string | null;
   text: string;
   blocks: ReadonlyArray<Record<string, unknown>> | null;
+  /** Files shared with the message: their titles and byte counts. */
+  readonly files: ReadonlyArray<{ readonly title: string; readonly size: number }>;
   readonly reactions: Set<string>;
   edits: number;
 }
@@ -71,6 +73,8 @@ export function startMockSlack(options: { readonly port?: number } = {}): Promis
   const calls: Array<MockCall> = [];
   const messages: Array<MockMessage> = [];
   const statuses = new Map<string, string>();
+  // Uploaded files not yet shared, by id: what Slack was told to expect, and what arrived.
+  const uploads = new Map<string, { readonly length: number; received: number | null }>();
   const sockets = new Set<NodeWS.WebSocket>();
   // Seeded from the wall clock, like Slack, so a restarted mock never repeats a message id.
   let clock = Math.floor(Date.now() / 1000);
@@ -93,6 +97,7 @@ export function startMockSlack(options: { readonly port?: number } = {}): Promis
       user,
       text,
       blocks: null,
+      files: [],
       reactions: new Set(),
       edits: 0,
     });
@@ -136,6 +141,7 @@ export function startMockSlack(options: { readonly port?: number } = {}): Promis
           user: MOCK_BOT_USER,
           text: String(args.text ?? ""),
           blocks: (args.blocks as Array<Record<string, unknown>> | undefined) ?? null,
+          files: [],
           reactions: new Set(),
           edits: 0,
         });
@@ -186,6 +192,33 @@ export function startMockSlack(options: { readonly port?: number } = {}): Promis
           })),
         };
       }
+      case "files.getUploadURLExternal": {
+        const id = `F${++seq}`;
+        uploads.set(id, { length: Number(args.length), received: null });
+        return { ok: true, upload_url: `${state.url}/_upload/${id}`, file_id: id };
+      }
+      case "files.completeUploadExternal": {
+        const shared = JSON.parse(String(args.files)) as Array<{ id: string; title: string }>;
+        const files = [];
+        for (const file of shared) {
+          const upload = uploads.get(file.id);
+          if (upload?.received !== upload?.length) return { ok: false, error: "file_not_uploaded" };
+          files.push({ title: file.title, size: upload!.length });
+          uploads.delete(file.id);
+        }
+        messages.push({
+          channel: String(args.channel_id),
+          ts: nextTs(),
+          threadTs: args.thread_ts === undefined ? null : String(args.thread_ts),
+          user: MOCK_BOT_USER,
+          text: "",
+          blocks: null,
+          files,
+          reactions: new Set(),
+          edits: 0,
+        });
+        return { ok: true };
+      }
       case "agents.sessions.setStatus":
         statuses.set(`${String(args.channel_id)}:${String(args.thread_ts)}`, String(args.status));
         return { ok: true };
@@ -216,10 +249,10 @@ export function startMockSlack(options: { readonly port?: number } = {}): Promis
   };
 
   const readBody = (request: NodeHttp.IncomingMessage) =>
-    new Promise<string>((resolve) => {
-      let body = "";
-      request.on("data", (chunk: Buffer) => (body += chunk.toString("utf8")));
-      request.on("end", () => resolve(body));
+    new Promise<Buffer>((resolve) => {
+      const chunks: Array<Buffer> = [];
+      request.on("data", (chunk: Buffer) => chunks.push(chunk));
+      request.on("end", () => resolve(Buffer.concat(chunks)));
     });
 
   const send = (
@@ -236,7 +269,15 @@ export function startMockSlack(options: { readonly port?: number } = {}): Promis
     void (async () => {
       const url = new URL(request.url ?? "/", "http://mock");
       if (!isOwnHost(request)) return send(response, 403, { ok: false, error: "forbidden" });
-      const raw = await readBody(request);
+      const bytes = await readBody(request);
+      const upload = url.pathname.startsWith("/_upload/")
+        ? uploads.get(url.pathname.slice("/_upload/".length))
+        : undefined;
+      if (upload !== undefined) {
+        upload.received = bytes.length;
+        return send(response, 200, "OK", "text/plain");
+      }
+      const raw = bytes.toString("utf8");
       let body: Record<string, unknown> = {};
       if (raw !== "") {
         try {
@@ -357,6 +398,7 @@ const icon = { complete: "✅", in_progress: "⏳", error: "⚠️" };
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const reacts = { eyes: "👀", white_check_mark: "✅" };
 function blocks(m) {
+  if (m.files.length) return m.files.map((f) => '<div class="ctx">📎 ' + esc(f.title) + ' (' + f.size + ' bytes)</div>').join("");
   if (!m.blocks) return '<div>' + esc(m.text) + '</div>';
   return m.blocks.map((b) => {
     if (b.type === "section") return '<div>' + esc(b.text.text) + '</div>';

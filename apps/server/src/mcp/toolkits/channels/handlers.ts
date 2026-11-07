@@ -42,7 +42,7 @@ const handlers = {
       if (self.router) return yield* failure("The router answers with channel_reply.");
       const channels = yield* Channels.Channels;
       yield* channels
-        .say(self.threadId, input.text)
+        .say(self.threadId, input.text, input.files ?? [])
         .pipe(Effect.mapError((error) => failure(error.message)));
       return { posted: true as const };
     }),

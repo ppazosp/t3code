@@ -69,7 +69,7 @@ describe("SlackAdapter against a mock Slack", () => {
     ),
   );
 
-  it.live("marks, posts Markdown, and reads the thread back", () =>
+  it.live("marks, posts Markdown and files, and reads the thread back", () =>
     withSlack((slack) =>
       Effect.gen(function* () {
         const { adapter } = yield* connect(slack);
@@ -92,9 +92,22 @@ describe("SlackAdapter against a mock Slack", () => {
           { type: "markdown", text: "**Done** &lt;!channel&gt; docs (http://x)" },
         ]);
 
+        // Files go up to Slack's upload address, then are shared in the same thread.
+        const bytes = new Uint8Array([1, 2, 3, 4, 5]);
+        yield* adapter.post(ref, {
+          text: "Screenshot",
+          files: [{ name: "shot.png", size: 5, mimeType: "image/png", bytes: Stream.make(bytes) }],
+        });
+        const shared = slack.messages.at(-1)!;
+        assert.deepStrictEqual(
+          [shared.threadTs, shared.files],
+          [ts, [{ title: "shot.png", size: 5 }]],
+        );
+        assert.strictEqual(slack.messages.at(-2)!.text, "Screenshot");
+
         const history = yield* adapter.read(ref, 10);
         assert.deepStrictEqual(
-          history.map((entry) => [entry.id, entry.author, entry.fromUser, entry.bot]),
+          history.slice(0, 2).map((entry) => [entry.id, entry.author, entry.fromUser, entry.bot]),
           [
             [ref, "you", true, false],
             [posted, "a bot", false, true],

@@ -1,21 +1,27 @@
-import type { ThreadId } from "@t3tools/contracts";
+import type { ProjectId, ThreadId } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import { HttpClient } from "effect/http";
 
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
+import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import { reportTarget } from "./bridge.ts";
 import { ChannelError, type ChannelAdapter, type ChannelHistoryEntry } from "./Channel.ts";
 import * as ChannelBridge from "./ChannelBridge.ts";
+import { openChannelFile } from "./files.ts";
 import { CHANNELS } from "./registry.ts";
 
 export { ChannelError } from "./Channel.ts";
 
 /** The most a task may say in its conversation at once. */
 const SAY_LIMIT = 3000;
+/** The most files a task may attach to one post. */
+const FILES_LIMIT = 10;
 
 export interface ChannelsShape {
   /** Posts the router's reply where a channel message came from, named by the `ref` it carried. */
@@ -25,8 +31,15 @@ export interface ChannelsShape {
    * proposal waits in T3, and the router stays quiet there.
    */
   readonly proposed: (ref: string) => Effect.Effect<void, ChannelError>;
-  /** Posts a task's short answer in the conversation the user asked for it in, and nowhere else. */
-  readonly say: (threadId: ThreadId, text: string) => Effect.Effect<void, ChannelError>;
+  /**
+   * Posts a task's short answer in the conversation the user asked for it in, and nowhere else,
+   * with any images or videos from its working folder.
+   */
+  readonly say: (
+    threadId: ThreadId,
+    text: string,
+    files: ReadonlyArray<string>,
+  ) => Effect.Effect<void, ChannelError>;
   /** The latest messages of a conversation, for the router to read what came before. */
   readonly read: (
     ref: string,
@@ -46,12 +59,17 @@ export const layer: Layer.Layer<
   never,
   | ThreadManagementService.ThreadManagementService
   | Orchestrator.OrchestratorV2
+  | ProjectStore.ProjectStoreV2
+  | FileSystem.FileSystem
+  | Path.Path
   | HttpClient.HttpClient
 > = Layer.effect(
   Channels,
   Effect.gen(function* () {
     const threads = yield* ThreadManagementService.ThreadManagementService;
     const engine = yield* Orchestrator.OrchestratorV2;
+    const projects = yield* ProjectStore.ProjectStoreV2;
+    const fileServices = yield* Effect.context<FileSystem.FileSystem | Path.Path>();
     const state = ChannelBridge.makeState();
     const adapters: Array<ChannelAdapter> = [];
     for (const channel of CHANNELS) {
@@ -83,12 +101,24 @@ export const layer: Layer.Layer<
         .pipe(Effect.mapError(() => new ChannelError({ message: "Could not read this thread." })));
       const ref =
         shell === null ? null : reportTarget(ChannelBridge.toBridgeThread(shell), prefixes);
-      if (ref === null) {
+      if (shell === null || ref === null) {
         return yield* new ChannelError({
           message: "This thread did not come from a conversation in a channel.",
         });
       }
-      return ref;
+      return { ref, shell };
+    });
+    /** The folder a task works in, where the files it attaches must be. */
+    const workingFolder = Effect.fn("Channels.workingFolder")(function* (shell: {
+      readonly worktreePath: string | null;
+      readonly projectId: ProjectId;
+    }) {
+      if (shell.worktreePath !== null) return shell.worktreePath;
+      const project = yield* projects.get(shell.projectId).pipe(Effect.orElseSucceed(Option.none));
+      if (Option.isNone(project)) {
+        return yield* new ChannelError({ message: "Could not find your working folder." });
+      }
+      return project.value.workspaceRoot;
     });
     return Channels.of({
       proposed: Effect.fn("Channels.proposed")(function* (ref) {
@@ -113,15 +143,27 @@ export const layer: Layer.Layer<
         }
         yield* postHandled(ref, text);
       }),
-      say: Effect.fn("Channels.say")(function* (threadId, text) {
-        const ref = yield* taskConversation(threadId);
+      say: Effect.fn("Channels.say")(function* (threadId, text, paths) {
+        const { ref, shell } = yield* taskConversation(threadId);
         if (text.length > SAY_LIMIT) {
           return yield* new ChannelError({
             message: `Keep it under ${SAY_LIMIT} characters; the rest belongs in your result.`,
           });
         }
+        if (paths.length > FILES_LIMIT) {
+          return yield* new ChannelError({
+            message: `Attach at most ${FILES_LIMIT} files at once.`,
+          });
+        }
         const adapter = yield* adapterFor(ref);
-        yield* adapter.post(ref, { text });
+        if (paths.length > 0 && adapter.fileLimit === 0) {
+          return yield* new ChannelError({ message: `${adapter.name} takes no files.` });
+        }
+        const root = paths.length === 0 ? "" : yield* workingFolder(shell);
+        const files = yield* Effect.forEach(paths, (path) =>
+          openChannelFile(root, path, adapter.fileLimit).pipe(Effect.provide(fileServices)),
+        );
+        yield* adapter.post(ref, { text, files });
       }),
       read: Effect.fn("Channels.read")(function* (ref, limit) {
         const adapter = yield* adapterFor(ref);

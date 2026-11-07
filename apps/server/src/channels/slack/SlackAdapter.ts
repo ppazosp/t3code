@@ -10,6 +10,7 @@ import {
   ChannelError,
   type ChannelAdapter,
   type ChannelEvent,
+  type ChannelFile,
   type ChannelHistoryEntry,
 } from "../Channel.ts";
 import {
@@ -28,6 +29,13 @@ const SlackOk = Schema.Struct({ ok: Schema.Boolean, error: Schema.optional(Schem
 const ConnectionsOpen = Schema.Struct({ url: Schema.String });
 const AuthTest = Schema.Struct({ user_id: Schema.String });
 const Posted = Schema.Struct({ channel: Schema.String, ts: Schema.String });
+const UploadSlot = Schema.Struct({ upload_url: Schema.String, file_id: Schema.String });
+const encodeUploaded = Schema.encodeSync(
+  Schema.fromJsonString(Schema.Array(Schema.Struct({ id: Schema.String, title: Schema.String }))),
+);
+
+/** Slack takes files up to 1 GB. */
+const SLACK_FILE_LIMIT = 1024 * 1024 * 1024;
 const Replies = Schema.Struct({
   messages: Schema.Array(
     Schema.Struct({
@@ -86,12 +94,18 @@ const slackCall = Effect.fn("SlackAdapter.call")(function* <A>(
   token: string,
   body: Record<string, unknown> | undefined,
   schema: Schema.Decoder<A>,
+  /** Some methods, such as the file upload ones, take only form fields, not JSON. */
+  form = false,
 ) {
   const client = yield* HttpClient.HttpClient;
   const unknownReply = () => new ChannelError({ message: `Slack ${method} sent an unknown reply` });
   const request = HttpClientRequest.post(`${apiUrl}/${method}`).pipe(
     HttpClientRequest.setHeaders({ Authorization: `Bearer ${token}` }),
-    body === undefined ? (same) => same : HttpClientRequest.bodyJsonUnsafe(body),
+    body === undefined
+      ? (same) => same
+      : form
+        ? HttpClientRequest.bodyUrlParams(body as Record<string, string>)
+        : HttpClientRequest.bodyJsonUnsafe(body),
   );
   const response = yield* client.execute(request).pipe(
     Effect.timeout("20 seconds"),
@@ -150,10 +164,39 @@ export const make = Effect.fn("SlackAdapter.make")(function* (settings: SlackSet
     body: Record<string, unknown> | undefined,
     schema: Schema.Decoder<A>,
     token = settings.botToken,
+    form = false,
   ) =>
-    slackCall(settings.apiUrl, method, token, body, schema).pipe(
+    slackCall(settings.apiUrl, method, token, body, schema, form).pipe(
       Effect.provideService(HttpClient.HttpClient, http),
     );
+
+  /** Uploads a file's bytes to Slack, not yet shared anywhere; returns its id. */
+  const upload = Effect.fn("SlackAdapter.upload")(function* (file: ChannelFile) {
+    const slot = yield* call(
+      "files.getUploadURLExternal",
+      { filename: file.name, length: String(file.size) },
+      UploadSlot,
+      settings.botToken,
+      true,
+    );
+    const sent = yield* http
+      .execute(
+        HttpClientRequest.post(slot.upload_url).pipe(
+          HttpClientRequest.bodyStream(file.bytes, {
+            contentType: file.mimeType,
+            contentLength: file.size,
+          }),
+        ),
+      )
+      .pipe(
+        Effect.timeout("30 minutes"),
+        Effect.mapError(() => new ChannelError({ message: `Could not upload ${file.name}` })),
+      );
+    if (sent.status !== 200) {
+      return yield* new ChannelError({ message: `Slack refused ${file.name} (${sent.status})` });
+    }
+    return { id: slot.file_id, title: file.name };
+  });
 
   const inbox = yield* Queue.unbounded<ChannelEvent>();
   const seen = new Set<string>();
@@ -314,6 +357,7 @@ export const make = Effect.fn("SlackAdapter.make")(function* (settings: SlackSet
     name: "slack",
     prefix: "slack:",
     events: Stream.fromQueue(inbox),
+    fileLimit: SLACK_FILE_LIMIT,
     mark: Effect.fn("SlackAdapter.mark")(function* (messageId, mark) {
       const target = yield* refOf(messageId);
       const reaction = (method: "reactions.add" | "reactions.remove", name: string) =>
@@ -339,7 +383,7 @@ export const make = Effect.fn("SlackAdapter.make")(function* (settings: SlackSet
         SlackOk,
       );
     }),
-    post: Effect.fn("SlackAdapter.post")(function* (ref, { text }) {
+    post: Effect.fn("SlackAdapter.post")(function* (ref, { text, files = [] }) {
       const target = yield* refOf(ref);
       const blocks =
         text.trim() === "" ? [] : [{ type: "markdown", text: slackMarkdown(fitted(text)) }];
@@ -354,6 +398,20 @@ export const make = Effect.fn("SlackAdapter.make")(function* (settings: SlackSet
         },
         Posted,
       );
+      if (files.length > 0) {
+        const uploaded = yield* Effect.forEach(files, upload);
+        yield* call(
+          "files.completeUploadExternal",
+          {
+            files: encodeUploaded(uploaded),
+            channel_id: target.channel,
+            thread_ts: target.threadTs,
+          },
+          SlackOk,
+          settings.botToken,
+          true,
+        );
+      }
       return `slack:${posted.channel}:${posted.ts}`;
     }),
   } satisfies ChannelAdapter;

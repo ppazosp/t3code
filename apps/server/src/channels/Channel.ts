@@ -47,9 +47,19 @@ export interface ChannelHistoryEntry {
   readonly text: string;
 }
 
-/** What T3 posts: Markdown, which the adapter makes safe to post. */
+/** A file to attach to a post, already checked by T3. */
+export interface ChannelFile {
+  readonly name: string;
+  /** In bytes. */
+  readonly size: number;
+  readonly mimeType: string;
+  readonly bytes: Stream.Stream<Uint8Array, ChannelError>;
+}
+
+/** What T3 posts: Markdown, which the adapter makes safe to post, and any files under it. */
 export interface ChannelPost {
   readonly text: string;
+  readonly files?: ReadonlyArray<ChannelFile> | undefined;
 }
 
 /**
@@ -63,6 +73,8 @@ export interface ChannelAdapter {
   /** The prefix of every ref this channel issues: the name and a colon. */
   readonly prefix: string;
   readonly events: Stream.Stream<ChannelEvent>;
+  /** The largest file the channel takes, in bytes: 0 when it takes none. */
+  readonly fileLimit: number;
   /**
    * Posts in the conversation `ref` names. Markdown renders, but cannot ping anyone or hide a link.
    * Returns the posted message's id.
