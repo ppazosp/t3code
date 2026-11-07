@@ -60,13 +60,13 @@ export function ProposalRow({
         <span className="flex min-w-0 items-center gap-1.5 text-xs text-sidebar-muted-foreground">
           {project === undefined ? null : <ProjectFavicon project={project} className="size-3.5" />}
           <span className="truncate">{project?.title ?? "Project"}</span>
-          {/* Fixed in the top right of every proposal. */}
-          <span className="ml-auto flex shrink-0 items-center gap-1 text-primary">
+          {/* Kept in the layout while Discard covers it, so nothing shifts on hover. */}
+          <span className="ml-auto flex shrink-0 items-center gap-1 text-primary group-focus-within/proposal:invisible group-hover/proposal:invisible">
             <LightbulbIcon aria-hidden className="size-3.5" />
             Proposal
           </span>
         </span>
-        <span className="truncate pr-6 text-sm text-sidebar-foreground">{task.title}</span>
+        <span className="truncate text-sm text-sidebar-foreground">{task.title}</span>
         {source === null ? null : (
           <span className="flex min-w-0 items-center gap-1.5 text-xs text-sidebar-muted-foreground">
             <SlackIcon aria-label="Slack" role="img" className="size-3.5 shrink-0" />
@@ -97,8 +97,8 @@ export function ProposalRow({
           </span>
         </span>
       </button>
-      {/* On the title's line, so the Proposal badge above it stays put. */}
-      <span className="absolute top-6.5 right-1.5 opacity-0 group-focus-within/proposal:opacity-100 group-hover/proposal:opacity-100">
+      {/* Takes the Proposal badge's place on hover. */}
+      <span className="absolute top-1 right-1.5 opacity-0 group-focus-within/proposal:opacity-100 group-hover/proposal:opacity-100">
         <Button size="icon-xs" variant="ghost-muted" aria-label="Discard" onClick={onDiscard}>
           <XIcon />
         </Button>
