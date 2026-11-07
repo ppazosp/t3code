@@ -1,4 +1,5 @@
 import {
+  ACCEPTED_TAG_PREFIX,
   CommandId,
   FROM_USER_TAG,
   isProposalTask,
@@ -7,6 +8,7 @@ import {
   type OrchestrationV2DomainEvent,
   type OrchestrationV2ThreadLaunchWorkspaceStrategy,
   type ProjectId,
+  type ScheduledTask,
   type ScheduledTaskId,
   type ServerProvider,
   type ThreadId,
@@ -101,10 +103,10 @@ export interface ProposeInput {
 }
 
 /**
- * The router's proposals. Each is a paused scheduled task, so T3 already stores it, shows it and runs
- * it on demand; the user accepts one by running it, and discards one by deleting it. What T3 cannot
- * hold, the channel conversation a proposal came from, is kept here, and given to the worker as tags
- * when it starts.
+ * The router's proposals. Each is a paused scheduled task, so T3 already stores and syncs it; the
+ * user opens one as a draft, accepts it by sending that draft, and discards it by deleting it. What T3
+ * cannot hold, the channel conversation a proposal came from, is kept here, and given to the worker
+ * as tags when it starts.
  */
 export class Proposals extends Context.Service<
   Proposals,
@@ -150,24 +152,39 @@ export const layer = Layer.effect(
         Effect.map((rows) => rows[0] ?? null),
       );
 
-    /** An accepted proposal's worker carries where it came from; the proposal itself is used up. */
+    /**
+     * The client tags the thread a proposal's draft became. Its worker then carries the proposal's
+     * title and where it came from, the proposal is used up, and the marker tag goes.
+     */
     const onAccepted = Effect.fn("Proposals.onAccepted")(
-      function* (taskId: ScheduledTaskId, threadId: ThreadId) {
-        const row = yield* originOf(taskId);
-        if (row !== null) {
-          const tags = [row.origin, ...(row.from_user === 1 ? [FROM_USER_TAG] : [])];
-          for (const tag of tags) {
-            yield* threads.dispatch({
-              type: "thread.tag.set",
-              commandId: CommandId.make(`proposal:tag:${threadId}:${tag}`),
-              threadId,
-              tag: tag as ThreadTag,
-              tagged: true,
-            });
-          }
-          yield* sql`DELETE FROM super_t3_proposal_origins WHERE task_id = ${taskId}`;
+      function* (task: ScheduledTask, threadId: ThreadId, marker: string) {
+        const row = yield* originOf(task.id);
+        const tags =
+          row === null ? [] : [row.origin, ...(row.from_user === 1 ? [FROM_USER_TAG] : [])];
+        for (const tag of tags) {
+          yield* threads.dispatch({
+            type: "thread.tag.set",
+            commandId: CommandId.make(`proposal:tag:${threadId}:${tag}`),
+            threadId,
+            tag: tag as ThreadTag,
+            tagged: true,
+          });
         }
-        yield* scheduled.delete({ id: taskId });
+        yield* threads.dispatch({
+          type: "thread.metadata.update",
+          commandId: CommandId.make(`proposal:title:${threadId}`),
+          threadId,
+          title: task.title,
+        });
+        yield* sql`DELETE FROM super_t3_proposal_origins WHERE task_id = ${task.id}`;
+        yield* scheduled.delete({ id: task.id });
+        yield* threads.dispatch({
+          type: "thread.tag.set",
+          commandId: CommandId.make(`proposal:untag:${threadId}:${marker}`),
+          threadId,
+          tag: marker as ThreadTag,
+          tagged: false,
+        });
       },
       Effect.catchCause((cause) =>
         Effect.logWarning("Could not finish accepting a proposal", { cause }),
@@ -175,21 +192,23 @@ export const layer = Layer.effect(
     );
 
     const onEvent = (event: OrchestrationV2DomainEvent) => {
-      // A scheduled run's first message names its task; only proposals are used up by running.
-      if (
-        event.type !== "turn-item.updated" ||
-        event.payload.type !== "user_message" ||
-        event.payload.scheduledTaskId === undefined
-      ) {
-        return Effect.void;
-      }
-      const taskId = event.payload.scheduledTaskId;
+      if (event.type !== "thread.tags-updated") return Effect.void;
+      const marker = event.payload.tags?.find((tag) => tag.startsWith(ACCEPTED_TAG_PREFIX));
+      if (marker === undefined) return Effect.void;
+      const taskId = marker.slice(ACCEPTED_TAG_PREFIX.length);
       return scheduled.list().pipe(
         Effect.map((result) => result.tasks.find((task) => task.id === taskId)),
         Effect.flatMap((task) =>
+          // Only a live proposal is used up; a stale marker is just dropped.
           task !== undefined && isProposalTask(task)
-            ? onAccepted(task.id, event.threadId)
-            : Effect.void,
+            ? onAccepted(task, event.payload.id, marker)
+            : threads.dispatch({
+                type: "thread.tag.set",
+                commandId: CommandId.make(`proposal:untag:${event.payload.id}:${marker}`),
+                threadId: event.payload.id,
+                tag: marker as ThreadTag,
+                tagged: false,
+              }),
         ),
         Effect.ignoreCause,
       );
