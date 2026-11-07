@@ -1,3 +1,6 @@
+// @effect-diagnostics nodeBuiltinImport:off - one request with a forged Host header, which fetch cannot send.
+import * as NodeHttp from "node:http";
+
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
@@ -182,6 +185,34 @@ describe("SlackAdapter against a mock Slack", () => {
         assert.strictEqual(yield* post({ "content-type": "text/plain" }), 403);
         assert.strictEqual(
           yield* post({ "content-type": "application/json", origin: "https://example.com" }),
+          403,
+        );
+        // A rebound DNS name reaches the port, but names another host.
+        assert.strictEqual(
+          yield* Effect.promise(
+            () =>
+              new Promise<number>((resolve) => {
+                const request = NodeHttp.request(
+                  `${slack.url}/_mock/say`,
+                  {
+                    method: "POST",
+                    headers: { "content-type": "application/json", host: "attacker.example" },
+                  },
+                  (response) => resolve(response.statusCode ?? 0),
+                );
+                request.end(JSON.stringify({ user: "UME", channel: "DME", text: "x", dm: true }));
+              }),
+          ),
+          403,
+        );
+        // A plain link or image cannot act either: GET with the fields in the query string.
+        assert.strictEqual(
+          yield* Effect.promise(() =>
+            // @effect-diagnostics-next-line globalFetchInEffect:off - acts as a browser page would.
+            fetch(`${slack.url}/_mock/say?user=UME&channel=DME&text=x&dm=true`).then(
+              (response) => response.status,
+            ),
+          ),
           403,
         );
         assert.strictEqual(yield* post({ "content-type": "application/json" }), 200);

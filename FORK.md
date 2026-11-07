@@ -35,7 +35,7 @@ The bridge (`ChannelBridge.ts`), the router's tools and proposals work with any 
 T3_SLACK_API_URL=http://127.0.0.1:18555/api T3_SLACK_BOT_TOKEN=xoxb-mock T3_SLACK_APP_TOKEN=xapp-mock T3_SLACK_TRUSTED_USER_ID=UME T3_SLACK_WATCHED_CHANNELS=CWATCH
 ```
 
-You are `UME`; `UMARIA` is someone else. The control API (`POST /_mock/say`, `/_mock/click`, `/_mock/submit` with a JSON body, `GET /_mock/state`) drives it from scripts. It writes and clicks as you, so it refuses requests from other sites' pages. The Slack adapter's tests run against the same mock.
+You are `UME`; `UMARIA` is someone else. The control API (`POST /_mock/say`, `/_mock/click`, `/_mock/submit` with a JSON body, `GET /_mock/state`) drives it from scripts. It writes and clicks as you, so those three take only a JSON `POST` addressed to the mock's own host, and refuse requests from other sites' pages. The Slack adapter's tests run against the same mock.
 
 ## What the router can do
 

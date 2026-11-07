@@ -223,15 +223,23 @@ export function startMockSlack(options: { readonly port?: number } = {}): Promis
     }
   };
 
-  /**
-   * The control API writes and clicks as the user, so a page on another site must not reach it:
-   * a browser sends its origin, and a JSON body forces a preflight this server never answers.
-   */
-  const isOwnRequest = (request: NodeHttp.IncomingMessage, own: string) => {
-    const origin = request.headers.origin;
-    if (origin !== undefined && origin !== own) return false;
+  /** Only requests addressed to this server, so a rebound DNS name cannot reach it from a page. */
+  const isOwnHost = (request: NodeHttp.IncomingMessage) => {
+    const port = new URL(state.url).port;
     return (
-      request.method === "GET" ||
+      request.headers.host === `127.0.0.1:${port}` || request.headers.host === `localhost:${port}`
+    );
+  };
+
+  /**
+   * The control API writes and clicks as the user, so a page on another site must not reach it: a
+   * browser sends its origin, and a JSON body forces a preflight this server never answers.
+   */
+  const isOwnPost = (request: NodeHttp.IncomingMessage) => {
+    const origin = request.headers.origin;
+    if (origin !== undefined && origin !== state.url) return false;
+    return (
+      request.method === "POST" &&
       (request.headers["content-type"] ?? "").startsWith("application/json")
     );
   };
@@ -256,6 +264,7 @@ export function startMockSlack(options: { readonly port?: number } = {}): Promis
   const server = NodeHttp.createServer((request, response) => {
     void (async () => {
       const url = new URL(request.url ?? "/", "http://mock");
+      if (!isOwnHost(request)) return send(response, 403, { ok: false, error: "forbidden" });
       const raw = await readBody(request);
       let body: Record<string, unknown> = {};
       if (raw !== "") {
@@ -265,22 +274,28 @@ export function startMockSlack(options: { readonly port?: number } = {}): Promis
           body = Object.fromEntries(new URLSearchParams(raw));
         }
       }
-      const args = { ...Object.fromEntries(url.searchParams), ...body };
       try {
         if (url.pathname.startsWith("/api/")) {
-          return send(response, 200, api(url.pathname.slice(5), args));
+          return send(
+            response,
+            200,
+            api(url.pathname.slice(5), {
+              ...Object.fromEntries(url.searchParams),
+              ...body,
+            }),
+          );
         }
-        if (url.pathname.startsWith("/_mock/") && !isOwnRequest(request, state.url)) {
+        const control = ["/_mock/say", "/_mock/click", "/_mock/submit"];
+        if (control.includes(url.pathname) && !isOwnPost(request)) {
           return send(response, 403, { ok: false, error: "forbidden" });
         }
-        if (url.pathname === "/_mock/say") {
-          return send(response, 200, { ts: say(args as never) });
-        }
+        // What the control API acts on comes only from its JSON body.
+        if (url.pathname === "/_mock/say") return send(response, 200, { ts: say(body as never) });
         if (url.pathname === "/_mock/click") {
-          return send(response, 200, { triggerId: click(args as never) });
+          return send(response, 200, { triggerId: click(body as never) });
         }
         if (url.pathname === "/_mock/submit") {
-          submit(args as never);
+          submit(body as never);
           return send(response, 200, { ok: true });
         }
         if (url.pathname === "/_mock/state") {
