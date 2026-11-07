@@ -333,12 +333,7 @@ export function TasksPage() {
           </div>
         )}
         {router === null ? null : (
-          <RouterDock
-            router={router}
-            now={now}
-            composerRef={composerRef}
-            onHeightChange={setDockHeight}
-          />
+          <RouterDock router={router} composerRef={composerRef} onHeightChange={setDockHeight} />
         )}
       </div>
     </SidebarInset>

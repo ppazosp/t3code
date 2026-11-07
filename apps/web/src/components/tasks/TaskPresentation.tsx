@@ -52,9 +52,13 @@ export function TaskStatusGlyph({ status, className }: { status: TaskStatus; cla
   );
 }
 
-/** The thread's own status pill, the same one the sidebar shows, when it says more than the status. */
+/**
+ * The thread's own status pill, the same one the sidebar shows, only when it says why a task needs
+ * the user. Elsewhere it repeats what the column already says.
+ */
 export function TaskStatusPill({ task }: { task: TaskNode }) {
-  const pill = resolveThreadStatusPill({ thread: task.thread });
+  const pill =
+    task.status === "needs_you" ? resolveThreadStatusPill({ thread: task.thread }) : null;
   if (pill === null) return null;
   return (
     <span className={cn("inline-flex shrink-0 items-center gap-1 text-2xs", pill.colorClass)}>
@@ -78,7 +82,7 @@ export function TaskSubtaskCount({ task }: { task: TaskNode }) {
         }
       >
         <SubtaskRing done={done} total={total} />
-        {done}/{total}
+        {done}/{total} subtasks
       </TooltipTrigger>
       <TooltipPopup side="top">{`${done} of ${total} subtasks finished`}</TooltipPopup>
     </Tooltip>
