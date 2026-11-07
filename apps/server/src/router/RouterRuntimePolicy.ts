@@ -16,8 +16,10 @@ export function isRouterThread(thread: { readonly tags?: ReadonlyArray<string> |
 export const ROUTER_TOOLS: ReadonlyArray<string> = [
   "orchestrator_capabilities",
   "t3_project_list",
+  "t3_project_read",
   "t3_thread_list",
   "t3_thread_read",
+  "t3_thread_search",
   "list_scheduled_tasks",
   "propose_task",
   "channel_reply",

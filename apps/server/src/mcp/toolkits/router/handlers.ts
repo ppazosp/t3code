@@ -32,7 +32,7 @@ const handlers = {
           brief: input.brief,
           projectId: input.projectId,
           workspaceStrategy: input.workspaceStrategy,
-          modelSelection: input.modelSelection,
+          agent: input.agent,
           effort: input.effort,
           plan: input.plan ?? false,
         })

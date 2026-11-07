@@ -414,6 +414,48 @@ describe("ClaudeAdapterV2 runtime query policy", () => {
     });
   });
 
+  it("gives a thread limited to its T3 tools no built-in tool and no MCP server but T3's", () => {
+    const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      cwd: "/workspace",
+      approvalPolicy: "never",
+      sandboxPolicy: { type: "readOnly" },
+      t3ToolAllowlist: ["t3_thread_list", "propose_task"],
+    });
+    const queryPolicy = ClaudeAdapterV2.claudeRuntimeQueryPolicyForRuntimePolicy(runtimePolicy);
+    assert.deepEqual(queryPolicy, {
+      permissionMode: "dontAsk",
+      tools: [],
+      strictMcpConfig: true,
+      installPermissionCallback: false,
+    });
+    // Exactly the allowed T3 tools run, without asking; nothing else is allowed.
+    const overrides = ClaudeAdapterV2.claudeMcpQueryOverrides({
+      mcpSession: {
+        endpoint: "http://127.0.0.1/mcp",
+        authorizationHeader: "Bearer t",
+      } as never,
+      readOnlySandbox: true,
+      t3ToolAllowlist: runtimePolicy.t3ToolAllowlist!,
+    });
+    assert.deepEqual(overrides.allowedTools, [
+      "mcp__t3-code__t3_thread_list",
+      "mcp__t3-code__propose_task",
+    ]);
+    assert.deepEqual(Object.keys(overrides.mcpServers ?? {}), ["t3-code"]);
+    const options = ClaudeAdapterV2.makeClaudeQueryOptions({
+      modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+      nativeThreadId: "native-t3-only",
+      resume: false,
+      cwd: "/workspace",
+      tools: [],
+      strictMcpConfig: true,
+    });
+    assert.deepEqual(options.tools, []);
+    assert.isTrue(options.strictMcpConfig);
+  });
+
   it("does not auto-allow reads for canonical restricted read-only never policy", () => {
     const queryPolicy = ClaudeAdapterV2.claudeRuntimeQueryPolicyForRuntimePolicy(
       ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({

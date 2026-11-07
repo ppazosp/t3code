@@ -1,5 +1,4 @@
 import {
-  ModelSelection,
   OrchestrationV2ThreadLaunchWorkspaceStrategy,
   OrchestratorMcpFailure,
   ProjectId,
@@ -14,13 +13,13 @@ import * as McpInvocationContext from "../../McpInvocationContext.ts";
 
 const ProposeTaskTool = Tool.make("propose_task", {
   description:
-    "Router only. Propose work for the user to accept or discard in T3; nothing runs until they accept. `brief` is the worker's whole instruction. `workspaceStrategy` is where it runs: a new worktree from `baseRef`, the project's `root` folder, or an `existing_worktree` path. Leave `modelSelection` out to use your own model. `effort` is a reasoning level such as low, medium or high. Set `plan` to start with a plan for review.",
+    "Router only. Propose work for the user to accept or discard in T3; nothing runs until they accept. `brief` is the worker's whole instruction. `workspaceStrategy` is where it runs: a new worktree from `baseRef`, the project's `root` folder, or an `existing_worktree` path. `agent` is who does the work: `codex` (GPT-6.1 Sol, xhigh effort) or `claude` (Opus 5.5, high effort). `effort` (low, medium, high or xhigh) replaces the agent's default only when the task clearly needs less or more. Set `plan` to start with a plan for review.",
   parameters: Schema.Struct({
     title: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(120)),
     brief: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(20_000)),
     projectId: ProjectId,
     workspaceStrategy: OrchestrationV2ThreadLaunchWorkspaceStrategy,
-    modelSelection: Schema.optional(ModelSelection),
+    agent: Schema.Literals(["codex", "claude"]),
     effort: Schema.optional(Schema.String),
     plan: Schema.optional(Schema.Boolean),
   }),

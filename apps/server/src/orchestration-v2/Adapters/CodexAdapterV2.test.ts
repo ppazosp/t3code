@@ -152,6 +152,43 @@ describe("CodexAdapterV2 assistant message streaming", () => {
 });
 
 describe("CodexAdapterV2 runtime policy", () => {
+  it("limits a thread with a T3 tool allowlist to those tools: no shell, web, connectors or own MCP", () => {
+    const servers = CodexAdapterV2.codexOtherMcpServers({
+      mcp_servers: { slack: {}, "t3-code": {}, "t3-code-direct": {}, linear: {} },
+    });
+    assert.deepEqual(servers, ["slack", "linear"]);
+    const runtimePolicy = {
+      runtimeMode: "full-access" as const,
+      interactionMode: "default" as const,
+      cwd: "/workspace",
+      t3ToolAllowlist: ["propose_task"],
+    };
+    const locked = CodexAdapterV2.codexThreadRuntimeParams({
+      threadId: ThreadId.make("thread-router"),
+      mcpSession: {
+        endpoint: "http://127.0.0.1/mcp",
+        authorizationHeader: "Bearer t",
+      } as never,
+      runtimePolicy,
+      otherMcpServers: servers,
+    }).config;
+    assert.include(locked, CodexAdapterV2.CODEX_T3_TOOLS_ONLY_CONFIG);
+    assert.isFalse(locked["mcp_servers.slack.enabled"]);
+    assert.isFalse(locked["mcp_servers.linear.enabled"]);
+    assert.deepEqual((locked["mcp_servers.t3-code"] as { enabled_tools: unknown }).enabled_tools, [
+      "propose_task",
+    ]);
+    // Any other thread keeps every tool.
+    const open = CodexAdapterV2.codexThreadRuntimeParams({
+      threadId: ThreadId.make("thread-worker"),
+      mcpSession: undefined,
+      runtimePolicy: { ...runtimePolicy, t3ToolAllowlist: undefined },
+      otherMcpServers: servers,
+    }).config;
+    assert.notProperty(open, "features.shell_tool");
+    assert.notProperty(open, "mcp_servers.slack.enabled");
+  });
+
   it.effect.each([undefined, false, true])(
     "selects native collaboration modes without prompt overrides with hasT3Mcp=%s",
     (hasT3Mcp) =>

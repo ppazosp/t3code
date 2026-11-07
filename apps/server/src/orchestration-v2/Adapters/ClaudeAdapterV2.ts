@@ -1543,6 +1543,7 @@ export function makeClaudeQueryOptions(input: {
   readonly appendSystemPromptFileText?: string;
   /** The thread's own trusted instructions, after T3 Code's. */
   readonly threadInstructions?: string;
+  readonly strictMcpConfig?: boolean;
   // Flag settings, because a user's settings.json env beats the process env in Claude Code.
   readonly toolSearchOverride?: "true";
 }): ClaudeAgentSdkQueryOptions {
@@ -1649,6 +1650,7 @@ export function makeClaudeQueryOptions(input: {
       : {}),
     ...(input.environment === undefined ? {} : { env: input.environment }),
     ...(input.mcpServers === undefined ? {} : { mcpServers: input.mcpServers }),
+    ...(input.strictMcpConfig === true ? { strictMcpConfig: true } : {}),
     systemPrompt: {
       type: "preset" as const,
       preset: "claude_code" as const,
@@ -1783,6 +1785,8 @@ export function claudeMcpQueryOverrides(input: {
   readonly mcpSession: McpProviderSession.McpProviderSessionConfig | undefined;
   readonly readOnlySandbox: boolean;
   readonly allowedTools?: ReadonlyArray<string>;
+  /** The only T3 tools the thread gets; they run without asking. */
+  readonly t3ToolAllowlist?: ReadonlyArray<string>;
 }): {
   readonly allowedTools?: ReadonlyArray<string>;
   readonly mcpServers?: ClaudeQueryOptions["mcpServers"];
@@ -1791,9 +1795,12 @@ export function claudeMcpQueryOverrides(input: {
   if (session === undefined) {
     return input.allowedTools === undefined ? {} : { allowedTools: input.allowedTools };
   }
-  const mcpAllowedTools = input.readOnlySandbox
-    ? CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS
-    : [CLAUDE_T3_MCP_TOOL_WILDCARD];
+  const mcpAllowedTools =
+    input.t3ToolAllowlist !== undefined
+      ? input.t3ToolAllowlist.map((tool) => `mcp__t3-code__${tool}`)
+      : input.readOnlySandbox
+        ? CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS
+        : [CLAUDE_T3_MCP_TOOL_WILDCARD];
   return {
     allowedTools: Array.from(new Set([...(input.allowedTools ?? []), ...mcpAllowedTools])),
     mcpServers: {
@@ -2620,6 +2627,8 @@ function permissionModeForClaudeRuntimePolicy(
 export interface ClaudeRuntimeQueryPolicy {
   readonly permissionMode: PermissionMode;
   readonly tools?: ClaudeAgentSdkQueryTools;
+  /** Only T3's MCP server, none from the user's settings, plugins or project. */
+  readonly strictMcpConfig?: true;
   readonly allowedTools?: ReadonlyArray<string>;
   readonly allowDangerouslySkipPermissions?: true;
   readonly installPermissionCallback: boolean;
@@ -2646,8 +2655,11 @@ export function claudeRuntimeQueryPolicyForRuntimePolicy(
       ? "default"
       : "auto"
     : requestedMode;
-  const readOnlyTools =
-    sandboxPolicyKindForClaudeRuntimePolicy(runtimePolicy) === "readOnly"
+  // A thread limited to its T3 tools gets no built-in tool and no MCP server but T3's.
+  const t3ToolsOnly = runtimePolicy.t3ToolAllowlist !== undefined;
+  const readOnlyTools = t3ToolsOnly
+    ? []
+    : sandboxPolicyKindForClaudeRuntimePolicy(runtimePolicy) === "readOnly"
       ? CLAUDE_READ_ONLY_ALLOWED_TOOLS
       : undefined;
   const allowedTools =
@@ -2667,6 +2679,7 @@ export function claudeRuntimeQueryPolicyForRuntimePolicy(
       permissionMode,
       ...(readOnlyTools === undefined ? {} : { tools: readOnlyTools }),
       ...(allowedTools === undefined ? {} : { allowedTools }),
+      ...(t3ToolsOnly ? { strictMcpConfig: true as const } : {}),
       // Claude routes Plan-mode writes to the callback even in Auto or Full access.
       installPermissionCallback: true,
     };
@@ -2676,6 +2689,7 @@ export function claudeRuntimeQueryPolicyForRuntimePolicy(
     permissionMode,
     ...(readOnlyTools === undefined ? {} : { tools: readOnlyTools }),
     ...(allowedTools === undefined ? {} : { allowedTools }),
+    ...(t3ToolsOnly ? { strictMcpConfig: true as const } : {}),
     ...(permissionMode === "bypassPermissions" ? { allowDangerouslySkipPermissions: true } : {}),
     installPermissionCallback,
   };
@@ -2777,6 +2791,7 @@ function claudeRuntimeQueryPolicyKey(policy: ClaudeRuntimeQueryPolicy): string {
     allowedTools: policy.allowedTools,
     allowDangerouslySkipPermissions: policy.allowDangerouslySkipPermissions,
     installPermissionCallback: policy.installPermissionCallback,
+    strictMcpConfig: policy.strictMcpConfig,
   });
 }
 
@@ -10385,6 +10400,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             ...(queryPolicy.allowedTools === undefined
               ? {}
               : { allowedTools: queryPolicy.allowedTools }),
+            ...(turnInput.runtimePolicy.t3ToolAllowlist === undefined
+              ? {}
+              : { t3ToolAllowlist: turnInput.runtimePolicy.t3ToolAllowlist }),
           });
           const queryPolicyKey = claudeEffectiveQueryPolicyKey(queryPolicy, mcpOverrides);
           const compiledSelection = compileClaudeModelSelection(turnInput.modelSelection);
@@ -10541,6 +10559,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             ...(turnInput.runtimePolicy.instructions === undefined
               ? {}
               : { threadInstructions: turnInput.runtimePolicy.instructions }),
+            ...(queryPolicy.strictMcpConfig === true ? { strictMcpConfig: true } : {}),
             ...(toolSearchOverride === undefined ? {} : { toolSearchOverride }),
           });
           const resolvedTurnCwd = yield* fileSystem

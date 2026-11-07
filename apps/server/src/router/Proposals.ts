@@ -95,15 +95,40 @@ export function resolveModelOptions(
   return { instanceId: selection.instanceId, model: selection.model, options: resolved };
 }
 
+/** Who a worker can be, with the model and effort it runs on unless the router asks for another. */
+const WORKER_AGENTS = {
+  codex: { driver: "codex", model: "gpt-6.1-sol", effort: "xhigh" },
+  claude: { driver: "claudeAgent", model: "claude-opus-5-5", effort: "high" },
+} as const;
+export type WorkerAgent = keyof typeof WORKER_AGENTS;
+
+/** A worker's model: its agent's default, on that provider's instance in this T3, if it has one. */
+export function workerModelSelection(
+  agent: WorkerAgent,
+  effort: string | undefined,
+  providers: ReadonlyArray<ServerProvider>,
+): ModelSelection | null {
+  const defaults = WORKER_AGENTS[agent];
+  const instance =
+    providers.find((provider) => provider.instanceId === defaults.driver) ??
+    providers.find((provider) => provider.driver === defaults.driver);
+  if (instance === undefined) return null;
+  return resolveModelOptions(
+    { instanceId: instance.instanceId, model: defaults.model, options: [] },
+    effort ?? defaults.effort,
+    providers,
+  );
+}
+
 export interface ProposeInput {
   readonly routerId: ThreadId;
   readonly title: string;
   readonly brief: string;
   readonly projectId: ProjectId;
   readonly workspaceStrategy: OrchestrationV2ThreadLaunchWorkspaceStrategy;
-  /** The router's own model when left out. */
-  readonly modelSelection: ModelSelection | undefined;
-  /** A reasoning level such as "low" or "high", matched to the model's own control. */
+  /** Who does the work, on its default model. */
+  readonly agent: WorkerAgent;
+  /** A reasoning level such as "low" or "high" in place of the agent's default. */
   readonly effort: string | undefined;
   readonly plan: boolean;
 }
@@ -241,6 +266,16 @@ export const layer = Layer.effect(
           header === null || trigger === undefined
             ? null
             : sourceOf(trigger.text, DateTime.formatIso(trigger.createdAt));
+        const modelSelection = workerModelSelection(
+          input.agent,
+          input.effort,
+          yield* providerRegistry.getProviders,
+        );
+        if (modelSelection === null) {
+          return yield* new ProposalError({
+            message: `${input.agent === "codex" ? "Codex" : "Claude"} is not set up in this T3; propose the other agent.`,
+          });
+        }
         const { task } = yield* scheduled
           .upsert({
             title: input.title,
@@ -249,11 +284,7 @@ export const layer = Layer.effect(
             schedule: { type: "once", runAt: PROPOSAL_RUN_AT },
             projectId: input.projectId,
             workspaceStrategy: input.workspaceStrategy,
-            modelSelection: resolveModelOptions(
-              input.modelSelection ?? router.thread.modelSelection,
-              input.effort,
-              yield* providerRegistry.getProviders,
-            ),
+            modelSelection,
             runtimeMode: "full-access",
             interactionMode: input.plan ? "plan" : "default",
             createdBy: "agent",
