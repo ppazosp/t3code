@@ -41,9 +41,10 @@ const ProposeTaskTool = Tool.make("propose_task", {
 
 const RouteToThreadTool = Tool.make("route_to_thread", {
   description:
-    "Router only. Pass new information straight to a thread already working on that matter (not archived), with no proposal: it gets the channel message you are acting on, who wrote it, and your `note`. A message the user wrote also moves its conversation to that thread, which answers there.",
+    "Router only. Pass new information straight to a worker thread already on that matter (not archived), with no proposal. `ref` is the one in the header of the channel message you are routing (leave it out only for what the user typed to you in T3). The worker gets that message, who wrote it, and your `note`. A message the user wrote also moves its conversation to that worker, which answers there. Someone else's message only reaches a worker that is working now.",
   parameters: Schema.Struct({
     threadId: ThreadId,
+    ref: Schema.optional(Schema.String),
     note: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(4000)),
   }),
   success: Schema.Struct({ routed: Schema.Literal(true) }),

@@ -51,7 +51,7 @@ const handlers = {
       const routerId = yield* routerCaller("route_to_thread");
       const proposals = yield* Proposals.Proposals;
       yield* proposals
-        .route({ routerId, threadId: input.threadId, note: input.note })
+        .route({ routerId, threadId: input.threadId, ref: input.ref, note: input.note })
         .pipe(Effect.mapError((error) => failure(error.message)));
       return { routed: true as const };
     }),
