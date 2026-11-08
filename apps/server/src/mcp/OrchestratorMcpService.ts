@@ -3061,6 +3061,23 @@ const make = Effect.gen(function* () {
           }
         }
       }
+      // The first page carries what the thread concluded, so agents need not page for it.
+      const firstPage = input.afterPosition === undefined && input.itemId === undefined;
+      const latestCompleted = target.runs
+        .filter((run) => run.status === "completed")
+        .toSorted((left, right) => right.ordinal - left.ordinal)[0];
+      const latestText =
+        !firstPage || latestCompleted === undefined
+          ? null
+          : yield* threadManagement
+              .getThreadRecords(target.thread.id, ["messages"], {
+                messageRoles: ["assistant"],
+                messageRunIds: [latestCompleted.id],
+              })
+              .pipe(
+                Effect.map((records) => records.messages.at(-1)?.text ?? null),
+                Effect.orElseSucceed(() => null),
+              );
       return {
         thread: threadDetail(
           scope,
@@ -3069,6 +3086,18 @@ const make = Effect.gen(function* () {
           shell,
           yield* Clock.currentTimeMillis,
         ),
+        ...(firstPage
+          ? {
+              latestResult:
+                latestText === null || latestCompleted === undefined
+                  ? null
+                  : {
+                      runId: latestCompleted.id,
+                      text: latestText.slice(0, maxChars),
+                      truncated: latestText.length > maxChars,
+                    },
+            }
+          : {}),
         recentRuns: target.runs
           .toSorted((left, right) => right.ordinal - left.ordinal)
           .slice(0, input.runLimit ?? DEFAULT_THREAD_RUN_LIMIT)

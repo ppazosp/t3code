@@ -491,6 +491,13 @@ export type OrchestratorMcpThreadTimelineItem = typeof OrchestratorMcpThreadTime
 
 export const OrchestratorMcpThreadReadResult = Schema.Struct({
   thread: OrchestratorMcpThreadDetail,
+  /**
+   * On the first page: the final answer of the thread's last completed run, so one small read tells
+   * an agent what the thread concluded. Null when no run has completed.
+   */
+  latestResult: Schema.optional(
+    Schema.NullOr(Schema.Struct({ runId: RunId, text: Schema.String, truncated: Schema.Boolean })),
+  ),
   recentRuns: Schema.Array(OrchestratorMcpThreadRun),
   items: Schema.Array(OrchestratorMcpThreadTimelineItem),
   nextPosition: Schema.NullOr(NonNegativeInt),
