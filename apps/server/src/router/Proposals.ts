@@ -146,6 +146,19 @@ export function acceptedTags(input: {
   return { remove, add };
 }
 
+/**
+ * A new worker's brief with the threads that already worked on something related, which it reads
+ * for context while starting fresh, on today's prompts rather than theirs.
+ */
+export function briefWithRelated(
+  brief: string,
+  related: ReadonlyArray<{ readonly id: string; readonly title: string }>,
+): string {
+  if (related.length === 0) return brief;
+  const lines = related.map((thread) => `- ${thread.title} (\`${thread.id}\`)`);
+  return `${brief}\n\nRelated threads, for context only (read them with t3_thread_read; this task starts fresh):\n${lines.join("\n")}`;
+}
+
 export interface ProposeInput {
   readonly routerId: ThreadId;
   readonly title: string;
@@ -160,6 +173,8 @@ export interface ProposeInput {
         readonly projectId: ProjectId;
         readonly workspaceStrategy: OrchestrationV2ThreadLaunchWorkspaceStrategy;
         readonly agent: WorkerAgent;
+        /** Threads that worked on something related, named in the brief for context. */
+        readonly relatedThreadIds: ReadonlyArray<ThreadId>;
       }
     | { readonly type: "continue"; readonly threadId: ThreadId };
   readonly plan: boolean;
@@ -308,17 +323,27 @@ export const layer = Layer.effect(
           message: `${target.agent === "codex" ? "Codex" : "Claude"} (${choice.instanceId}) is not set up in this T3; propose the other agent.`,
         });
       }
+      const related = [];
+      for (const id of target.relatedThreadIds) {
+        const shell = yield* threads.getThreadShell(id).pipe(Effect.orElseSucceed(() => null));
+        if (shell === null || shell.deletedAt !== null || isRouterThread(shell)) {
+          return yield* new ProposalError({ message: `There is no thread ${id} to name.` });
+        }
+        related.push({ id, title: shell.title });
+      }
       return {
         projectId: target.projectId,
         threadId: null,
         workspaceStrategy: target.workspaceStrategy,
         modelSelection: workerModelSelection(choice, providers),
+        related,
       };
     });
 
     /**
-     * A thread to continue, archived ones included (sending the proposal brings one back): it keeps
-     * its own folder and model, and one proposal waits for it at once.
+     * An active thread to continue: it keeps its own folder, model and context, and one proposal
+     * waits for it at once. An archived one is not brought back; a new worker names it instead, and
+     * starts on today's prompts.
      */
     const continuation = Effect.fn("Proposals.continuation")(function* (threadId: ThreadId) {
       const shell = yield* threads
@@ -330,6 +355,11 @@ export const layer = Layer.effect(
       if (isRouterThread(shell)) {
         return yield* new ProposalError({
           message: "You cannot propose work for your own thread.",
+        });
+      }
+      if (shell.archivedAt !== null) {
+        return yield* new ProposalError({
+          message: `${shell.title} is archived. Propose a new worker and list it in relatedThreadIds, so the worker reads it and starts fresh.`,
         });
       }
       const waiting = yield* scheduled.list().pipe(
@@ -352,6 +382,7 @@ export const layer = Layer.effect(
         threadId,
         workspaceStrategy,
         modelSelection: shell.modelSelection,
+        related: [],
       };
     });
 
@@ -377,7 +408,10 @@ export const layer = Layer.effect(
         const { task } = yield* scheduled
           .upsert({
             title: input.title,
-            prompt: source === null ? input.brief : withProposalSource(input.brief, source),
+            prompt:
+              source === null
+                ? briefWithRelated(input.brief, where.related)
+                : withProposalSource(briefWithRelated(input.brief, where.related), source),
             enabled: false,
             schedule: { type: "once", runAt: PROPOSAL_RUN_AT },
             projectId: where.projectId,

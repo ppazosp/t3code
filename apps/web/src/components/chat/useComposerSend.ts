@@ -146,7 +146,7 @@ import type { useQueuedRunEdit } from "./useQueuedRunEdit";
 import type { useTimelineFollow } from "./useTimelineFollow";
 import type { useUsageLimitsPanel } from "./useUsageLimitsPanel";
 import type { useWorktreeSetup } from "./useWorktreeSetup";
-import { readProposalDrafts, takeUnarchivedFor } from "../router/proposalDrafts";
+import { readProposalDrafts } from "../router/proposalDrafts";
 import { useFollowUpProposal } from "../router/RouterSection";
 
 const ENVIRONMENT_UNAVAILABLE_SEND_TOAST_TRAIL_SIZE = 3;
@@ -351,9 +351,6 @@ export function useComposerSend(input: ComposerSendInput) {
     reportFailure: false,
   });
   const setThreadTag = useOrchestrationCommand(threadEnvironment.setTag, { reportFailure: false });
-  const unarchiveThread = useOrchestrationCommand(threadEnvironment.unarchive, {
-    reportFailure: false,
-  });
   // super-t3: sending in a thread a proposal would continue accepts that proposal.
   const followUpProposal = useFollowUpProposal(environmentId, activeThread?.id ?? null);
   const setComposerDraftPrompt = useComposerDraftStore((store) => store.setPrompt);
@@ -1322,12 +1319,6 @@ export function useComposerSend(input: ComposerSendInput) {
     if (failure === null && turnAttachmentsResult._tag === "Success") {
       // Marked accepted before the turn starts, so that turn already knows where the work came from.
       if (!isLocalDraftThread && followUpProposal !== undefined) {
-        // Used, so discarding can no longer send the thread back to the archive.
-        takeUnarchivedFor(followUpProposal.id);
-        // An archived thread comes back to take the work.
-        if (activeThread.archivedAt != null) {
-          await unarchiveThread({ environmentId, input: { threadId: threadIdForSend } });
-        }
         await setThreadTag({
           environmentId,
           input: {

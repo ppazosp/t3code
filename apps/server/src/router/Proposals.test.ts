@@ -2,7 +2,13 @@ import { assert, describe, it } from "@effect/vitest";
 
 import { readChannelHeader, readProposalSource, withProposalSource } from "@t3tools/contracts";
 
-import { acceptedTags, resolveModelOptions, sourceOf, workerModelSelection } from "./Proposals.ts";
+import {
+  acceptedTags,
+  briefWithRelated,
+  resolveModelOptions,
+  sourceOf,
+  workerModelSelection,
+} from "./Proposals.ts";
 import { DEFAULT_CONFIG } from "./SuperT3Home.ts";
 
 describe("Proposals", () => {
@@ -65,6 +71,14 @@ describe("Proposals", () => {
       { id: "reasoningEffort", value: "low" },
     ]);
     assert.deepStrictEqual(resolveModelOptions(guessed, "extreme", providers).options, []);
+  });
+
+  it("names related threads at the end of a new worker's brief, for context", () => {
+    assert.strictEqual(briefWithRelated("Fix it.", []), "Fix it.");
+    assert.strictEqual(
+      briefWithRelated("Fix it.", [{ id: "thread-1", title: "Add median" }]),
+      "Fix it.\n\nRelated threads, for context only (read them with t3_thread_read; this task starts fresh):\n- Add median (`thread-1`)",
+    );
   });
 
   it("makes an accepted thread a worker, and moves a continued one to the new conversation", () => {

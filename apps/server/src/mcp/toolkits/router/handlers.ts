@@ -42,6 +42,7 @@ const handlers = {
           projectId: input.projectId,
           workspaceStrategy: input.workspaceStrategy,
           agent: input.agent,
+          relatedThreadIds: input.relatedThreadIds ?? [],
         };
       }
       const { id } = yield* proposals

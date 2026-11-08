@@ -9,7 +9,6 @@ import {
   readProposalSource,
   ROUTER_TAG,
   type ScheduledTask,
-  type ThreadId,
 } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { ChevronRightIcon, RouteIcon } from "lucide-react";
@@ -25,8 +24,6 @@ import { useEnvironment, usePrimaryEnvironmentId } from "../../state/environment
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { threadEnvironment } from "../../state/threads";
-import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { buildThreadRouteParams } from "../../threadRoutes";
 import { SidebarGroup, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "../ui/sidebar";
 import { ProposalRow } from "./ProposalRow";
@@ -36,8 +33,6 @@ import {
   proposalDraftFor,
   readProposalDrafts,
   rememberProposalDraft,
-  rememberUnarchivedFor,
-  takeUnarchivedFor,
 } from "./proposalDrafts";
 
 /** The router's proposals in the primary environment, where the router lives. */
@@ -170,13 +165,12 @@ export function RouterSection() {
 function useOpenProposal() {
   const navigate = useNavigate();
   const threads = useThreadShells();
-  const unarchive = useOrchestrationCommand(threadEnvironment.unarchive, { reportFailure: false });
   return async (environmentId: EnvironmentId, task: ScheduledTask) => {
     const store = useComposerDraftStore.getState();
     // A proposal to continue a thread opens in that thread, with the brief in its composer.
     if (task.threadId !== null) {
       const threadRef = scopeThreadRef(environmentId, task.threadId);
-      // Archived threads are not listed or opened, so the proposal brings it back first.
+      // Archived since it was proposed: an archived thread is not continued.
       const listed = threads.some(
         (thread) =>
           thread.environmentId === environmentId &&
@@ -184,10 +178,12 @@ function useOpenProposal() {
           thread.archivedAt === null,
       );
       if (!listed) {
-        const result = await unarchive({ environmentId, input: { threadId: task.threadId } });
-        if (result._tag === "Success") {
-          rememberUnarchivedFor(task.id, { environmentId, threadId: task.threadId });
-        }
+        toastManager.add({
+          type: "info",
+          title: "That thread is archived",
+          description: "Discard this proposal; the router proposes a new worker instead.",
+        });
+        return;
       }
       if ((store.getComposerDraft(threadRef)?.prompt ?? "").trim() === "") {
         store.setPrompt(threadRef, readProposalSource(task.prompt).brief);
@@ -240,7 +236,6 @@ export function useProposalActions() {
   const remove = useAtomCommand(serverEnvironment.deleteScheduledTask, {
     label: "proposal discard",
   });
-  const archive = useOrchestrationCommand(threadEnvironment.archive, { reportFailure: false });
   return {
     discard: async (environmentId: EnvironmentId, task: ScheduledTask) => {
       const result = await remove({ environmentId, input: { id: task.id } });
@@ -259,14 +254,6 @@ export function useProposalActions() {
         const threadRef = scopeThreadRef(environmentId, task.threadId);
         if (store.getComposerDraft(threadRef)?.prompt === readProposalSource(task.prompt).brief) {
           store.setPrompt(threadRef, "");
-        }
-        // A thread the proposal brought back from the archive goes back there.
-        const unarchived = takeUnarchivedFor(task.id);
-        if (unarchived !== undefined) {
-          await archive({
-            environmentId: unarchived.environmentId as EnvironmentId,
-            input: { threadId: unarchived.threadId as ThreadId },
-          });
         }
       }
       return true;
