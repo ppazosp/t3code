@@ -11,50 +11,49 @@ import { RouterToolkit } from "./tools.ts";
 const failure = (message: string) =>
   new OrchestratorMcpFailure({ code: "invalid_request", message });
 
+/** The calling thread, which must be the router. */
+const routerCaller = Effect.fn("RouterTools.caller")(function* (tool: string) {
+  const scope = yield* McpInvocationContext.McpInvocationContext;
+  const { thread } = yield* McpInvocationContext.requireThreadScope(scope, tool);
+  const threads = yield* ThreadManagementService.ThreadManagementService;
+  const shell = yield* threads
+    .getThreadShell(thread.threadId)
+    .pipe(Effect.orElseSucceed(() => null));
+  if (shell === null || !isRouterThread(shell)) {
+    return yield* failure("Only the router thread can do this.");
+  }
+  return thread.threadId;
+});
+
 const handlers = {
-  // Only the router proposes; workers delegate instead.
+  // Only the router proposes and routes; workers delegate instead.
   propose_task: McpToolAccess.actsAsCaller((input) =>
     Effect.gen(function* () {
-      const scope = yield* McpInvocationContext.McpInvocationContext;
-      const { thread } = yield* McpInvocationContext.requireThreadScope(scope, "propose_task");
-      const threads = yield* ThreadManagementService.ThreadManagementService;
-      const shell = yield* threads
-        .getThreadShell(thread.threadId)
-        .pipe(Effect.orElseSucceed(() => null));
-      if (shell === null || !isRouterThread(shell)) {
-        return yield* failure("Only the router thread can propose tasks.");
-      }
+      const routerId = yield* routerCaller("propose_task");
       const proposals = yield* Proposals.Proposals;
-      let target: Proposals.ProposeInput["target"];
-      if (input.threadId !== undefined) {
-        target = { type: "continue", threadId: input.threadId };
-      } else if (
-        input.projectId === undefined ||
-        input.workspaceStrategy === undefined ||
-        input.agent === undefined
-      ) {
-        return yield* failure(
-          "A new worker needs projectId, workspaceStrategy and agent; to continue a thread, give threadId.",
-        );
-      } else {
-        target = {
-          type: "new",
+      const { id } = yield* proposals
+        .propose({
+          routerId,
+          title: input.title,
+          brief: input.brief,
           projectId: input.projectId,
           workspaceStrategy: input.workspaceStrategy,
           agent: input.agent,
           relatedThreadIds: input.relatedThreadIds ?? [],
-        };
-      }
-      const { id } = yield* proposals
-        .propose({
-          routerId: thread.threadId,
-          title: input.title,
-          brief: input.brief,
-          target,
           plan: input.plan ?? false,
         })
         .pipe(Effect.mapError((error) => failure(error.message)));
       return { proposalId: id };
+    }),
+  ),
+  route_to_thread: McpToolAccess.actsAsCaller((input) =>
+    Effect.gen(function* () {
+      const routerId = yield* routerCaller("route_to_thread");
+      const proposals = yield* Proposals.Proposals;
+      yield* proposals
+        .route({ routerId, threadId: input.threadId, note: input.note })
+        .pipe(Effect.mapError((error) => failure(error.message)));
+      return { routed: true as const };
     }),
   ),
 } satisfies McpToolAccess.Handlers<typeof RouterToolkit.tools>;

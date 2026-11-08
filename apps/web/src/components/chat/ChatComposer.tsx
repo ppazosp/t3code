@@ -279,7 +279,6 @@ import {
 import { ComposerControlsBar } from "./ComposerControlsBar";
 import { composerCommandKeyHandler } from "./composerCommandKey";
 import { useProposalDraft } from "../router/proposalDrafts";
-import { useFollowUpProposal } from "../router/RouterSection";
 
 function consumePasteAsTextShortcut(deadline: { current: number }): boolean {
   const armed = Date.now() <= deadline.current;
@@ -963,13 +962,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const selectedModelOptionsForDispatch = composerProviderState.modelOptionsForDispatch;
   // A proposal the router wants planned keeps plan mode, even where the setting hides it.
   const proposalDraft = useProposalDraft(draftId);
-  const followUpProposal = useFollowUpProposal(
-    environmentId,
-    typeof composerDraftTarget === "string" ? null : composerDraftTarget.threadId,
-  );
   const { enabled: planModeUiEnabled, interactionMode } = resolveComposerInteractionMode({
-    planModeEnabled:
-      settings.planModeEnabled || proposalDraft !== undefined || followUpProposal !== undefined,
+    planModeEnabled: settings.planModeEnabled || proposalDraft !== undefined,
     provider: selectedProviderStatus,
     interactionMode: requestedInteractionMode,
   });

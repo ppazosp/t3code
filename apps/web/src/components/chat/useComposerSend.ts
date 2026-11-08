@@ -147,7 +147,6 @@ import type { useTimelineFollow } from "./useTimelineFollow";
 import type { useUsageLimitsPanel } from "./useUsageLimitsPanel";
 import type { useWorktreeSetup } from "./useWorktreeSetup";
 import { readProposalDrafts } from "../router/proposalDrafts";
-import { useFollowUpProposal } from "../router/RouterSection";
 
 const ENVIRONMENT_UNAVAILABLE_SEND_TOAST_TRAIL_SIZE = 3;
 
@@ -350,9 +349,6 @@ export function useComposerSend(input: ComposerSendInput) {
   const uploadThreadFeedback = useOrchestrationCommand(threadEnvironment.uploadFeedback, {
     reportFailure: false,
   });
-  const setThreadTag = useOrchestrationCommand(threadEnvironment.setTag, { reportFailure: false });
-  // super-t3: sending in a thread a proposal would continue accepts that proposal.
-  const followUpProposal = useFollowUpProposal(environmentId, activeThread?.id ?? null);
   const setComposerDraftPrompt = useComposerDraftStore((store) => store.setPrompt);
   const setComposerDraftTerminalContexts = useComposerDraftStore(
     (store) => store.setTerminalContexts,
@@ -1317,17 +1313,6 @@ export function useComposerSend(input: ComposerSendInput) {
     let backgroundDraftOpened = false;
     let turnStartSucceeded = false;
     if (failure === null && turnAttachmentsResult._tag === "Success") {
-      // Marked accepted before the turn starts, so that turn already knows where the work came from.
-      if (!isLocalDraftThread && followUpProposal !== undefined) {
-        await setThreadTag({
-          environmentId,
-          input: {
-            threadId: threadIdForSend,
-            tag: `${ACCEPTED_TAG_PREFIX}${followUpProposal.id}` as ThreadTag,
-            tagged: true,
-          },
-        });
-      }
       const proposalTaskId =
         isLocalDraftThread && draftId !== null ? readProposalDrafts()[draftId]?.taskId : undefined;
       const bootstrap =

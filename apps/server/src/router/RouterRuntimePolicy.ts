@@ -23,6 +23,7 @@ export const ROUTER_TOOLS: ReadonlyArray<string> = [
   "t3_thread_search",
   "list_scheduled_tasks",
   "propose_task",
+  "route_to_thread",
   "channel_reply",
   "channel_read",
 ];

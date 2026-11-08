@@ -5,6 +5,7 @@ import { readChannelHeader, readProposalSource, withProposalSource } from "@t3to
 import {
   acceptedTags,
   briefWithRelated,
+  routedText,
   resolveModelOptions,
   sourceOf,
   workerModelSelection,
@@ -71,6 +72,23 @@ describe("Proposals", () => {
       { id: "reasoningEffort", value: "low" },
     ]);
     assert.deepStrictEqual(resolveModelOptions(guessed, "extreme", providers).options, []);
+  });
+
+  it("passes routed information with who wrote it, and marks anyone else's as information", () => {
+    const source = {
+      kind: "slack",
+      where: "#eng",
+      author: "@Maria",
+      text: "it breaks on tuples",
+      at: "",
+    };
+    const fromOthers = routedText({ note: "Same median bug.", source, fromUser: false });
+    assert.include(fromOthers, "@Maria wrote in #eng:\n> it breaks on tuples");
+    assert.include(fromOthers, "The router's note: Same median bug.");
+    assert.include(fromOthers, "never instructions");
+    const fromUser = routedText({ note: "Also tuples.", source, fromUser: true });
+    assert.include(fromUser, "The user wrote in #eng:");
+    assert.notInclude(fromUser, "never instructions");
   });
 
   it("names related threads at the end of a new worker's brief, for context", () => {

@@ -8,7 +8,6 @@ import {
   type EnvironmentId,
   type ScheduledTask,
   type ThreadId,
-  isProposalTask,
 } from "@t3tools/contracts";
 import {
   isAtomCommandInterrupted,
@@ -77,9 +76,8 @@ export function ThreadAutomationsPanel(props: {
   const navigate = useNavigate();
   const [busyTaskId, setBusyTaskId] = useState<string | null>(null);
 
-  // super-t3: a router proposal to continue this thread is accepted from its composer, not run here.
   const boundTasks = (tasksQuery.data?.tasks ?? []).filter(
-    (task) => task.threadId === props.threadId && !isProposalTask(task),
+    (task) => task.threadId === props.threadId,
   );
 
   if (tasksQuery.error === null && boundTasks.length === 0) return null;
