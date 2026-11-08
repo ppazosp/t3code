@@ -378,9 +378,9 @@ export const layer = Layer.effect(
     });
 
     /**
-     * The message being routed: the server-written channel message with that ref, or, with none,
-     * what the user last typed in T3. A ref is required while a channel message is the latest, so
-     * leaving it out cannot pass someone else's words off as the user's.
+     * The message being routed, from those this turn answers: the server-written channel message with
+     * that ref, or, with none, what the user typed in T3. A ref is required while a channel message is
+     * the latest, so leaving it out cannot pass someone else's words off as the user's.
      */
     const routedMessage = Effect.fn("Proposals.routedMessage")(function* (
       routerId: ThreadId,
@@ -389,7 +389,14 @@ export const layer = Layer.effect(
       const router = yield* threads
         .getThreadProjection(routerId)
         .pipe(Effect.mapError(failed("Could not read the router thread.")));
-      const userMessages = router.messages.filter((message) => message.role === "user");
+      // Only what this turn is answering: an older message's ref cannot lend it the user's trust.
+      const currentRun = router.runs.reduce<(typeof router.runs)[number] | undefined>(
+        (latest, run) => (latest === undefined || run.ordinal > latest.ordinal ? run : latest),
+        undefined,
+      );
+      const userMessages = router.messages.filter(
+        (message) => message.role === "user" && message.runId === currentRun?.id,
+      );
       if (ref === undefined) {
         const latest = userMessages.at(-1);
         if (latest === undefined || latest.creationSource === "server") {
@@ -406,7 +413,7 @@ export const layer = Layer.effect(
       const header = message === undefined ? null : readChannelHeader(message.text);
       if (message === undefined || header === null) {
         return yield* new ProposalError({
-          message: `No channel message reached you with ref ${ref}.`,
+          message: `No channel message in this turn has ref ${ref}; route only what you are answering now.`,
         });
       }
       return {
