@@ -116,6 +116,32 @@ describe("Proposals", () => {
         ],
       },
     ] as never;
+    // Claude names its control "effort".
+    const claudeProviders = [
+      {
+        instanceId: "claudeAgent",
+        driver: "claudeAgent",
+        models: [
+          {
+            slug: "claude-opus-5-5",
+            capabilities: {
+              optionDescriptors: [
+                {
+                  type: "select",
+                  id: "effort",
+                  label: "Effort",
+                  options: ["medium", "high", "max"].map((id) => ({ id, label: id })),
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ] as never;
+    assert.deepStrictEqual(
+      workerModelSelection(DEFAULT_CONFIG.workers.claude, claudeProviders).options,
+      [{ id: "effort", value: "high" }],
+    );
     assert.deepStrictEqual(workerModelSelection(DEFAULT_CONFIG.workers.codex, providers), {
       instanceId: "codex",
       model: "gpt-6.1-sol",

@@ -76,7 +76,10 @@ export function resolveModelOptions(
   const reasoning = descriptors.find(
     (descriptor) =>
       descriptor.type === "select" &&
-      (descriptor.role === "reasoning" || descriptor.id === "reasoningEffort"),
+      // Codex calls it reasoningEffort, Claude effort; others mark the control's role.
+      (descriptor.role === "reasoning" ||
+        descriptor.id === "reasoningEffort" ||
+        descriptor.id === "effort"),
   );
   // Routers often put effort among the options under a guessed name; read it back from there too.
   const guessedEffort = (selection.options ?? []).find(
