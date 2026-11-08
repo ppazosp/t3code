@@ -43,7 +43,7 @@ You are `UME`; `UMARIA` is someone else. The control API (`POST /_mock/say`, `/_
 super-t3 keeps three files in T3's home, in `super-t3/` (for a dev worktree, `.t3/super-t3/`). They start as defaults, are never overwritten, and are read fresh, so an edit applies on the next turn:
 
 - `ROUTER.md`: the router's system prompt: what it is, how it works, how to use workers.
-- `WORKER.md`: added to the system prompt of every worker the router proposed, after the provider's and T3's own (empty it to add nothing).
+- `WORKER.md`: added to the system prompt of every worker the router proposed, after the provider's and T3's own (empty it to add nothing). The default has workers read the threads their brief names, search for more related work themselves, and tell a running worker that touches the same files with facts, never instructions: the router routes, workers gather context and coordinate.
 - `config.json`: the router's model (`router.model`), applied to the router's thread at start, when a router appears and whenever the file changes; and each worker agent's (`workers.codex`, `workers.claude`). Each is a provider instance, a model and an effort.
 
 ## What the router can do
