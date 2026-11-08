@@ -9,6 +9,7 @@ import {
   readProposalSource,
   ROUTER_TAG,
   type ScheduledTask,
+  type ThreadId,
 } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { ChevronRightIcon, RouteIcon } from "lucide-react";
@@ -35,6 +36,8 @@ import {
   proposalDraftFor,
   readProposalDrafts,
   rememberProposalDraft,
+  rememberUnarchivedFor,
+  takeUnarchivedFor,
 } from "./proposalDrafts";
 
 /** The router's proposals in the primary environment, where the router lives. */
@@ -181,7 +184,10 @@ function useOpenProposal() {
           thread.archivedAt === null,
       );
       if (!listed) {
-        await unarchive({ environmentId, input: { threadId: task.threadId } });
+        const result = await unarchive({ environmentId, input: { threadId: task.threadId } });
+        if (result._tag === "Success") {
+          rememberUnarchivedFor(task.id, { environmentId, threadId: task.threadId });
+        }
       }
       if ((store.getComposerDraft(threadRef)?.prompt ?? "").trim() === "") {
         store.setPrompt(threadRef, readProposalSource(task.prompt).brief);
@@ -234,6 +240,7 @@ export function useProposalActions() {
   const remove = useAtomCommand(serverEnvironment.deleteScheduledTask, {
     label: "proposal discard",
   });
+  const archive = useOrchestrationCommand(threadEnvironment.archive, { reportFailure: false });
   return {
     discard: async (environmentId: EnvironmentId, task: ScheduledTask) => {
       const result = await remove({ environmentId, input: { id: task.id } });
@@ -245,6 +252,22 @@ export function useProposalActions() {
       if (draftId !== null) {
         forgetProposalDraft(draftId);
         useComposerDraftStore.getState().clearDraftThread(DraftId.make(draftId));
+      }
+      if (task.threadId !== null) {
+        // The brief it put in the thread's composer goes with it, unless the user changed it.
+        const store = useComposerDraftStore.getState();
+        const threadRef = scopeThreadRef(environmentId, task.threadId);
+        if (store.getComposerDraft(threadRef)?.prompt === readProposalSource(task.prompt).brief) {
+          store.setPrompt(threadRef, "");
+        }
+        // A thread the proposal brought back from the archive goes back there.
+        const unarchived = takeUnarchivedFor(task.id);
+        if (unarchived !== undefined) {
+          await archive({
+            environmentId: unarchived.environmentId as EnvironmentId,
+            input: { threadId: unarchived.threadId as ThreadId },
+          });
+        }
       }
       return true;
     },

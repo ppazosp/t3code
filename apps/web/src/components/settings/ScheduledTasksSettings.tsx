@@ -1,3 +1,4 @@
+import { isProposalTask } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { connectionStatusTitle } from "@t3tools/client-runtime/connection";
 import { AsyncResult } from "effect/reactivity";
@@ -524,8 +525,11 @@ function ScheduledTaskEnvironmentList({
     return {
       environment,
       connected: index >= 0,
-      tasks: data?.tasks.filter((task) =>
-        matchesScheduledTaskScope(scope, environment.environmentId, task.projectId),
+      // super-t3: the router's proposals live in the sidebar, not among scheduled tasks.
+      tasks: data?.tasks.filter(
+        (task) =>
+          !isProposalTask(task) &&
+          matchesScheduledTaskScope(scope, environment.environmentId, task.projectId),
       ),
       error: query?._tag === "Failure" ? formatEnvironmentQueryError(query.cause) : null,
     };
@@ -662,8 +666,10 @@ function ScheduledTaskEnvironmentSection({
         })
       : null,
   );
-  const tasks = tasksQuery.data?.tasks.filter((task) =>
-    matchesScheduledTaskScope(scope, environment.environmentId, task.projectId),
+  const tasks = tasksQuery.data?.tasks.filter(
+    (task) =>
+      !isProposalTask(task) &&
+      matchesScheduledTaskScope(scope, environment.environmentId, task.projectId),
   );
   const linkedTask = tasks?.find((task) => task.id === taskId);
   return (
