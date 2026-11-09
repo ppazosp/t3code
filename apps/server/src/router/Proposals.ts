@@ -167,16 +167,17 @@ const quoted = (text: string) =>
     .map((line) => `> ${line}`)
     .join("\n");
 
-const WORKER_REQUEST_HEADER = /^\[worker thread=(\S+)\] (.*)$/u;
+const WORKER_REQUEST_HEADER = /^\[worker thread=([^\s\]]+)\]$/u;
 
-/** A worker's request as the router gets it: a header naming the worker, then its words quoted. */
+/**
+ * A worker's request as the router gets it: a header naming only the worker's thread, then its words
+ * quoted. Its title stays out of the header, since a title is free text the router must not trust.
+ */
 export function workerRequestText(input: {
   readonly threadId: string;
-  readonly title: string;
   readonly request: string;
 }): string {
-  const title = input.title.replace(/\s+/gu, " ").trim();
-  return `[worker thread=${input.threadId}] ${title}\n${quoted(input.request)}`;
+  return `[worker thread=${input.threadId}]\n${quoted(input.request)}`;
 }
 
 /**
@@ -185,13 +186,12 @@ export function workerRequestText(input: {
  */
 export function readWorkerRequest(
   text: string,
-): { readonly threadId: string; readonly title: string; readonly body: string } | null {
+): { readonly threadId: string; readonly body: string } | null {
   const [header = "", ...lines] = text.split("\n");
   const match = WORKER_REQUEST_HEADER.exec(header);
   if (match === null) return null;
   return {
     threadId: match[1]!,
-    title: match[2]!,
     body: lines
       .map((line) => line.replace(/^> ?/u, ""))
       .join("\n")
@@ -199,18 +199,19 @@ export function readWorkerRequest(
   };
 }
 
-/**
- * Where a message the server wrote for the router came from: a channel or a worker. Typed text
- * cannot fake either, so only a server-written message is read.
- */
-function serverSourceOf(text: string, at: string): ProposalSource | null {
-  const channel = sourceOf(text, at);
-  if (channel !== null) return channel;
-  const request = readWorkerRequest(text);
-  if (request === null) return null;
+/** A worker's request as a proposal's source: the worker's title, as plain one-line text. */
+export function workerSource(
+  request: { readonly body: string },
+  title: string,
+  at: string,
+): ProposalSource {
   return {
     kind: "worker",
-    where: request.title,
+    where:
+      title
+        .replace(/["\s]+/gu, " ")
+        .trim()
+        .slice(0, 120) || "a worker",
     author: "Worker",
     text: request.body.length <= 600 ? request.body : `${request.body.slice(0, 600)}…`,
     at,
@@ -425,6 +426,24 @@ export const layer = Layer.effect(
       ),
     );
 
+    /**
+     * Where a message the server wrote for the router came from: a channel, or a worker, whose title
+     * is looked up here rather than read from the message. Typed text cannot fake either.
+     */
+    const serverSourceOf = Effect.fn("Proposals.serverSourceOf")(function* (
+      text: string,
+      at: string,
+    ) {
+      const channel = sourceOf(text, at);
+      if (channel !== null) return channel;
+      const request = readWorkerRequest(text);
+      if (request === null) return null;
+      const shell = yield* threads
+        .getThreadShell(request.threadId as ThreadId)
+        .pipe(Effect.orElseSucceed(() => null));
+      return workerSource(request, shell?.title ?? "", at);
+    });
+
     /** The channel message the router is acting on: only a message the server wrote counts. */
     const triggerOf = Effect.fn("Proposals.triggerOf")(function* (routerId: ThreadId) {
       const router = yield* threads
@@ -439,7 +458,7 @@ export const layer = Layer.effect(
       return {
         origin: header?.ref ?? null,
         fromUser: header?.fromUser === true,
-        source: serverSourceOf(trigger.text, DateTime.formatIso(trigger.createdAt)),
+        source: yield* serverSourceOf(trigger.text, DateTime.formatIso(trigger.createdAt)),
       };
     });
 
@@ -470,7 +489,7 @@ export const layer = Layer.effect(
           return {
             origin: null,
             fromUser: false,
-            source: serverSourceOf(latest.text, DateTime.formatIso(latest.createdAt)),
+            source: yield* serverSourceOf(latest.text, DateTime.formatIso(latest.createdAt)),
           };
         }
         if (latest === undefined || latest.creationSource === "server") {
@@ -653,11 +672,7 @@ export const layer = Layer.effect(
             commandId: CommandId.make(key),
             threadId: router.id,
             messageId: MessageId.make(key),
-            text: workerRequestText({
-              threadId: input.workerId,
-              title: shell.title,
-              request: input.request,
-            }),
+            text: workerRequestText({ threadId: input.workerId, request: input.request }),
             attachments: [],
             mode: "auto",
             createdBy: "agent",
