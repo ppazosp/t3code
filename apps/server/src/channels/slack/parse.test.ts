@@ -6,6 +6,7 @@ import {
   parseSlackRef,
   readSlackMessage,
   readSlackOutsider,
+  readSlackSettings,
   readSlackStop,
   slackMarkdown,
 } from "./parse.ts";
@@ -20,6 +21,23 @@ const payload = (event: Record<string, unknown>) => ({
 
 const read = (event: Record<string, unknown>) =>
   Option.getOrNull(readSlackMessage(payload(event), settings, BOT));
+
+describe("readSlackSettings", () => {
+  it("watches the listed channels, or every channel the bot is in with all", () => {
+    const watched = (value: string) =>
+      Option.getOrThrow(
+        readSlackSettings({
+          botToken: Option.some("xoxb"),
+          appToken: Option.some("xapp"),
+          trustedUserId: Option.some("UME"),
+          watchedChannels: Option.some(value),
+          apiUrl: Option.none(),
+        }),
+      ).watchedChannels;
+    assert.strictEqual(watched(" All "), "all");
+    assert.deepStrictEqual(watched("C1, C2,"), new Set(["C1", "C2"]));
+  });
+});
 
 describe("readSlackMessage", () => {
   it("reads the user's DMs as requests, and ignores anyone else's", () => {
@@ -48,6 +66,19 @@ describe("readSlackMessage", () => {
       fromUser: true,
       direct: true,
     });
+    const all = { ...settings, watchedChannels: "all" as const };
+    assert.include(
+      Option.getOrNull(
+        readSlackMessage(payload({ channel: "COTHER", user: "USOMEONE" }), all, BOT),
+      ),
+      { fromUser: false, direct: false },
+    );
+    // Watching every channel never opens DMs to anyone but the user.
+    assert.isTrue(
+      Option.isNone(
+        readSlackMessage(payload({ channel: "D2", channel_type: "im", user: "UX" }), all, BOT),
+      ),
+    );
   });
 
   it("reads someone else's DM as an outsider, and never the user's or a bot's", () => {

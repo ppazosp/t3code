@@ -70,7 +70,7 @@ super-t3's mark is T3 Code's desktop icon, its silver T3 on black, crowned with 
    - `T3_SLACK_BOT_TOKEN`: the bot token.
    - `T3_SLACK_APP_TOKEN`: the app-level token.
    - `T3_SLACK_TRUSTED_USER_ID`: your member ID.
-   - `T3_SLACK_WATCHED_CHANNELS`: optional, a comma-separated list of channel IDs the router reads in full.
+   - `T3_SLACK_WATCHED_CHANNELS`: optional, a comma-separated list of channel IDs the router reads in full, or `all` for every channel the bot is in. Without it, the router reads only your DMs and your mentions of the bot.
 
 A file like `.env.super-t3` at the repository root keeps them out of git (`.env*` is ignored). The server logs "Slack connected" once it is in.
 

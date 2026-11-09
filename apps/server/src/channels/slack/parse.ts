@@ -12,8 +12,11 @@ export interface SlackSettings {
   readonly appToken: string;
   /** The Slack member whose DMs and mentions are requests from the user of this T3. */
   readonly trustedUserId: string;
-  /** Channels whose messages the router reads to propose work, without a mention. */
-  readonly watchedChannels: ReadonlySet<string>;
+  /**
+   * Channels whose messages the router reads to propose work, without a mention: these, or `all`,
+   * every channel the bot is in.
+   */
+  readonly watchedChannels: ReadonlySet<string> | "all";
   /** Slack's Web API, or a stand-in for it in tests. */
   readonly apiUrl: string;
 }
@@ -71,7 +74,8 @@ export function readSlackMessage(
       const fromUser = message.user === settings.trustedUserId;
       const isDm = message.channel_type === "im";
       const mentionsBot = message.type === "app_mention" || text.includes(`<@${botUserId}>`);
-      const watched = settings.watchedChannels.has(message.channel);
+      const watched =
+        settings.watchedChannels === "all" || settings.watchedChannels.has(message.channel);
       const relevant = isDm ? fromUser : watched || (mentionsBot && fromUser);
       if (!relevant || text === "") return Option.none();
       return Option.some({
@@ -171,6 +175,16 @@ export const plainLinks = (text: string) =>
 
 export const slackMarkdownFits = (text: string) => slackMarkdown(text).length <= MARKDOWN_LIMIT;
 
+function watchedChannelsOf(value: string): ReadonlySet<string> | "all" {
+  if (value.trim().toLowerCase() === "all") return "all";
+  return new Set(
+    value
+      .split(",")
+      .map((channel) => channel.trim())
+      .filter((channel) => channel !== ""),
+  );
+}
+
 export function readSlackSettings(env: {
   readonly botToken: Option.Option<string>;
   readonly appToken: Option.Option<string>;
@@ -185,12 +199,7 @@ export function readSlackSettings(env: {
   }).pipe(
     Option.map((required) => ({
       ...required,
-      watchedChannels: new Set(
-        Option.getOrElse(env.watchedChannels, () => "")
-          .split(",")
-          .map((channel) => channel.trim())
-          .filter((channel) => channel !== ""),
-      ),
+      watchedChannels: watchedChannelsOf(Option.getOrElse(env.watchedChannels, () => "")),
       apiUrl: Option.getOrElse(env.apiUrl, () => SLACK_API_URL).replace(/\/+$/u, ""),
     })),
   );
