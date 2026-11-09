@@ -167,6 +167,56 @@ const quoted = (text: string) =>
     .map((line) => `> ${line}`)
     .join("\n");
 
+const WORKER_REQUEST_HEADER = /^\[worker thread=(\S+)\] (.*)$/u;
+
+/** A worker's request as the router gets it: a header naming the worker, then its words quoted. */
+export function workerRequestText(input: {
+  readonly threadId: string;
+  readonly title: string;
+  readonly request: string;
+}): string {
+  const title = input.title.replace(/\s+/gu, " ").trim();
+  return `[worker thread=${input.threadId}] ${title}\n${quoted(input.request)}`;
+}
+
+/**
+ * Reads a request the server wrote for the router from a worker. Only the first line counts, so a
+ * header a worker typed inside its request, which arrives quoted, never reads as one.
+ */
+export function readWorkerRequest(
+  text: string,
+): { readonly threadId: string; readonly title: string; readonly body: string } | null {
+  const [header = "", ...lines] = text.split("\n");
+  const match = WORKER_REQUEST_HEADER.exec(header);
+  if (match === null) return null;
+  return {
+    threadId: match[1]!,
+    title: match[2]!,
+    body: lines
+      .map((line) => line.replace(/^> ?/u, ""))
+      .join("\n")
+      .trim(),
+  };
+}
+
+/**
+ * Where a message the server wrote for the router came from: a channel or a worker. Typed text
+ * cannot fake either, so only a server-written message is read.
+ */
+function serverSourceOf(text: string, at: string): ProposalSource | null {
+  const channel = sourceOf(text, at);
+  if (channel !== null) return channel;
+  const request = readWorkerRequest(text);
+  if (request === null) return null;
+  return {
+    kind: "worker",
+    where: request.title,
+    author: "Worker",
+    text: request.body.length <= 600 ? request.body : `${request.body.slice(0, 600)}…`,
+    at,
+  };
+}
+
 /**
  * What a worker gets when the router routes new information to it: the message it came from, who
  * wrote it, and the router's note. Anyone but the user is information, never instructions.
@@ -178,8 +228,11 @@ export function routedText(input: {
 }): string {
   const parts = ["The router passed you new information for your task."];
   if (input.source !== null) {
-    const who = input.fromUser ? "The user" : input.source.author;
-    parts.push(`${who} wrote in ${input.source.where}:\n${quoted(input.source.text)}`);
+    parts.push(
+      input.source.kind === "worker"
+        ? `The worker on "${input.source.where}" asked for this:\n${quoted(input.source.text)}`
+        : `${input.fromUser ? "The user" : input.source.author} wrote in ${input.source.where}:\n${quoted(input.source.text)}`,
+    );
   }
   parts.push(`The router's note: ${input.note}`);
   if (input.source !== null && !input.fromUser) {
@@ -212,8 +265,23 @@ export interface RouteInput {
   readonly note: string;
 }
 
+/** A worker's request to the router for work outside its own task. */
+export interface AskRouterInput {
+  readonly workerId: ThreadId;
+  readonly request: string;
+}
+
 /** A thread at work right now, which routed information steers without starting anything. */
 const WORKING_STATUSES = new Set(["queued", "preparing", "starting", "running"]);
+
+/** A thread the router proposed, from the moment the user accepts it, or one a conversation moved to. */
+export function isWorkerThread(tags: ReadonlyArray<string>): boolean {
+  return (
+    tags.includes(WORKER_TAG) ||
+    tags.some((tag) => tag.startsWith(ACCEPTED_TAG_PREFIX)) ||
+    tags.some((tag) => CHANNELS.some((channel) => tag.startsWith(`${channel.name}:`)))
+  );
+}
 
 /**
  * Why information cannot be routed to a thread, or null when it can: only a live worker takes it,
@@ -229,11 +297,7 @@ export function routeRefusal(
   if (shell.archivedAt !== null) {
     return `${shell.title} is archived. Propose a new worker and list it in relatedThreadIds instead.`;
   }
-  const tags = shell.tags ?? [];
-  const isWorker =
-    tags.includes(WORKER_TAG) ||
-    tags.some((tag) => CHANNELS.some((channel) => tag.startsWith(`${channel.name}:`)));
-  if (!isWorker) {
+  if (!isWorkerThread(shell.tags ?? [])) {
     return `${shell.title} is not a worker. Propose a new worker and list it in relatedThreadIds instead.`;
   }
   if (!fromUser && !WORKING_STATUSES.has(shell.status)) {
@@ -254,6 +318,8 @@ export class Proposals extends Context.Service<
       input: ProposeInput,
     ) => Effect.Effect<{ readonly id: ScheduledTaskId }, ProposalError>;
     readonly route: (input: RouteInput) => Effect.Effect<void, ProposalError>;
+    /** A worker asks the router for a new worker, for work outside its task. */
+    readonly askRouter: (input: AskRouterInput) => Effect.Effect<void, ProposalError>;
   }
 >()("t3/router/Proposals") {}
 
@@ -366,14 +432,14 @@ export const layer = Layer.effect(
         .pipe(Effect.mapError(failed("Could not read the router thread.")));
       // Typed text cannot fake where it came from: only the server writes channel messages.
       const trigger = router.messages.findLast((message) => message.role === "user");
-      const header = trigger?.creationSource === "server" ? readChannelHeader(trigger.text) : null;
+      if (trigger?.creationSource !== "server") {
+        return { origin: null, fromUser: false, source: null };
+      }
+      const header = readChannelHeader(trigger.text);
       return {
         origin: header?.ref ?? null,
         fromUser: header?.fromUser === true,
-        source:
-          header === null || trigger === undefined
-            ? null
-            : sourceOf(trigger.text, DateTime.formatIso(trigger.createdAt)),
+        source: serverSourceOf(trigger.text, DateTime.formatIso(trigger.createdAt)),
       };
     });
 
@@ -399,6 +465,14 @@ export const layer = Layer.effect(
       );
       if (ref === undefined) {
         const latest = userMessages.at(-1);
+        // A worker's request has no ref: it is someone other than the user, like a channel message.
+        if (latest?.creationSource === "server" && readWorkerRequest(latest.text) !== null) {
+          return {
+            origin: null,
+            fromUser: false,
+            source: serverSourceOf(latest.text, DateTime.formatIso(latest.createdAt)),
+          };
+        }
         if (latest === undefined || latest.creationSource === "server") {
           return yield* new ProposalError({
             message: "Give the ref from the header of the channel message you are routing.",
@@ -550,6 +624,46 @@ export const layer = Layer.effect(
             creationSource: "server",
           })
           .pipe(Effect.mapError(failed("Could not pass the information to that thread.")));
+      }),
+      askRouter: Effect.fn("Proposals.askRouter")(function* (input) {
+        const shell = yield* threads
+          .getThreadShell(input.workerId)
+          .pipe(Effect.mapError(failed("Could not read your thread.")));
+        if (shell === null || isRouterThread(shell) || !isWorkerThread(shell.tags ?? [])) {
+          return yield* new ProposalError({
+            message: "Only a worker the router proposed can ask it for a new worker.",
+          });
+        }
+        const { threads: active } = yield* threads
+          .getShellSnapshot({ location: "active" })
+          .pipe(Effect.mapError(failed("Could not find the router.")));
+        const router = active.find(
+          (thread) =>
+            thread.archivedAt === null && thread.deletedAt === null && isRouterThread(thread),
+        );
+        if (router === undefined) {
+          return yield* new ProposalError({
+            message: "No router is running. Mention the work in your final message instead.",
+          });
+        }
+        const key = `ask-router:${input.workerId}:${DateTime.toEpochMillis(yield* DateTime.now)}`;
+        yield* threads
+          .sendToThread({
+            projectId: router.projectId,
+            commandId: CommandId.make(key),
+            threadId: router.id,
+            messageId: MessageId.make(key),
+            text: workerRequestText({
+              threadId: input.workerId,
+              title: shell.title,
+              request: input.request,
+            }),
+            attachments: [],
+            mode: "auto",
+            createdBy: "agent",
+            creationSource: "server",
+          })
+          .pipe(Effect.mapError(failed("Could not pass your request to the router.")));
       }),
     });
   }),

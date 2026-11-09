@@ -41,7 +41,7 @@ const ProposeTaskTool = Tool.make("propose_task", {
 
 const RouteToThreadTool = Tool.make("route_to_thread", {
   description:
-    "Router only. Pass new information straight to a worker thread already on that matter (not archived), with no proposal. `ref` is the one in the header of the channel message you are routing (leave it out only for what the user typed to you in T3). The worker gets that message, who wrote it, and your `note`. A message the user wrote also moves its conversation to that worker, which answers there. Someone else's message only reaches a worker that is working now.",
+    "Router only. Pass new information straight to a worker thread already on that matter (not archived), with no proposal. `ref` is the one in the header of the channel message you are routing (leave it out only for what the user typed to you in T3 or a worker's request). The worker gets that message, who wrote it, and your `note`. A message the user wrote also moves its conversation to that worker, which answers there. Someone else's message only reaches a worker that is working now.",
   parameters: Schema.Struct({
     threadId: ThreadId,
     ref: Schema.optional(Schema.String),
@@ -56,4 +56,19 @@ const RouteToThreadTool = Tool.make("route_to_thread", {
   .annotate(Tool.Destructive, false)
   .annotate(Tool.OpenWorld, false);
 
-export const RouterToolkit = Toolkit.make(ProposeTaskTool, RouteToThreadTool);
+const RequestWorkerTool = Tool.make("request_worker", {
+  description:
+    "Workers only. Ask the router for a new worker, for work outside your task that no thread is doing. `request` is self-contained: what to do, why, where, and what done looks like. The router checks whether a thread already does it and otherwise proposes a worker for the user to accept. It does not answer you; carry on with your task.",
+  parameters: Schema.Struct({
+    request: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(4000)),
+  }),
+  success: Schema.Struct({ sent: Schema.Literal(true) }),
+  failure: OrchestratorMcpFailure,
+  failureMode: "return",
+  dependencies: routerDependencies,
+})
+  .annotate(Tool.Title, "Ask the router for a worker")
+  .annotate(Tool.Destructive, false)
+  .annotate(Tool.OpenWorld, false);
+
+export const RouterToolkit = Toolkit.make(ProposeTaskTool, RouteToThreadTool, RequestWorkerTool);

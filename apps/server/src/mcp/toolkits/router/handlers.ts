@@ -26,7 +26,7 @@ const routerCaller = Effect.fn("RouterTools.caller")(function* (tool: string) {
 });
 
 const handlers = {
-  // Only the router proposes and routes; workers delegate instead.
+  // Only the router proposes and routes; workers ask it.
   propose_task: McpToolAccess.actsAsCaller((input) =>
     Effect.gen(function* () {
       const routerId = yield* routerCaller("propose_task");
@@ -54,6 +54,17 @@ const handlers = {
         .route({ routerId, threadId: input.threadId, ref: input.ref, note: input.note })
         .pipe(Effect.mapError((error) => failure(error.message)));
       return { routed: true as const };
+    }),
+  ),
+  request_worker: McpToolAccess.actsAsCaller((input) =>
+    Effect.gen(function* () {
+      const scope = yield* McpInvocationContext.McpInvocationContext;
+      const { thread } = yield* McpInvocationContext.requireThreadScope(scope, "request_worker");
+      const proposals = yield* Proposals.Proposals;
+      yield* proposals
+        .askRouter({ workerId: thread.threadId, request: input.request })
+        .pipe(Effect.mapError((error) => failure(error.message)));
+      return { sent: true as const };
     }),
   ),
 } satisfies McpToolAccess.Handlers<typeof RouterToolkit.tools>;
