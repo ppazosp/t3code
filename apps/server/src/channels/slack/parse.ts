@@ -35,11 +35,19 @@ const SlackMessageEvent = Schema.Struct({
   channel_type: Schema.optional(Schema.String),
   user: Schema.optional(Schema.String),
   bot_id: Schema.optional(Schema.String),
+  bot_profile: Schema.optional(Schema.Struct({ name: Schema.optional(Schema.String) })),
+  username: Schema.optional(Schema.String),
   subtype: Schema.optional(Schema.String),
   text: Schema.optional(Schema.String),
   ts: Schema.String,
   thread_ts: Schema.optional(Schema.String),
 });
+
+/** T3's own Slack identity, whose messages are never read back. */
+export interface SlackSelf {
+  readonly userId: string;
+  readonly botId: string | undefined;
+}
 
 const EventsApiPayload = Schema.Struct({
   team_id: Schema.optional(Schema.String),
@@ -51,29 +59,35 @@ const decodeEvent = Schema.decodeUnknownOption(SlackMessageEvent);
 
 /**
  * Turns an Events API payload into a message for the router, or nothing. The router reads DMs and
- * mentions from the user, and everything said in a watched channel. A mention in a watched channel
- * arrives twice, as `message` and `app_mention`; both carry the same id, so the second is a
- * duplicate the caller drops.
+ * mentions from the user, and everything said in a watched channel, by people and by other bots
+ * such as alerting tools. A mention in a watched channel arrives twice, as `message` and
+ * `app_mention`; both carry the same id, so the second is a duplicate the caller drops.
  */
 export function readSlackMessage(
   payload: unknown,
   settings: Pick<SlackSettings, "trustedUserId" | "watchedChannels">,
-  botUserId: string,
+  self: SlackSelf,
 ): Option.Option<ChannelMessage> {
   return Option.flatMap(decodePayload(payload), ({ event }) =>
     Option.flatMap(decodeEvent(event), (message) => {
+      const bot = message.bot_id !== undefined;
+      // Older integrations post as `bot_message`, with no user.
+      const allowedSubtype =
+        message.subtype === undefined ||
+        message.subtype === "thread_broadcast" ||
+        (bot && message.subtype === "bot_message");
       if (
-        message.bot_id !== undefined ||
-        message.user === undefined ||
-        message.user === botUserId ||
-        (message.subtype !== undefined && message.subtype !== "thread_broadcast")
+        !allowedSubtype ||
+        (!bot && message.user === undefined) ||
+        message.user === self.userId ||
+        (bot && message.bot_id === self.botId)
       ) {
         return Option.none();
       }
       const text = (message.text ?? "").trim();
-      const fromUser = message.user === settings.trustedUserId;
+      const fromUser = !bot && message.user === settings.trustedUserId;
       const isDm = message.channel_type === "im";
-      const mentionsBot = message.type === "app_mention" || text.includes(`<@${botUserId}>`);
+      const mentionsBot = message.type === "app_mention" || text.includes(`<@${self.userId}>`);
       const watched =
         settings.watchedChannels === "all" || settings.watchedChannels.has(message.channel);
       const relevant = isDm ? fromUser : watched || (mentionsBot && fromUser);
@@ -84,8 +98,12 @@ export function readSlackMessage(
         fromUser,
         direct: isDm || mentionsBot,
         where: isDm ? "dm" : `#${message.channel}`,
-        author: fromUser ? "you" : `@${message.user}`,
-        text: text.replaceAll(`<@${botUserId}>`, "").trim(),
+        author: bot
+          ? `${message.bot_profile?.name?.trim() || message.username?.trim() || "a bot"} (bot)`
+          : fromUser
+            ? "you"
+            : `@${message.user}`,
+        text: text.replaceAll(`<@${self.userId}>`, "").trim(),
       });
     }),
   );

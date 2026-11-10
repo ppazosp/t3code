@@ -23,12 +23,13 @@ import {
   readSlackStop,
   slackMarkdownFits,
   SocketEnvelope,
+  type SlackSelf,
   type SlackSettings,
 } from "./parse.ts";
 
 const SlackOk = Schema.Struct({ ok: Schema.Boolean, error: Schema.optional(Schema.String) });
 const ConnectionsOpen = Schema.Struct({ url: Schema.String });
-const AuthTest = Schema.Struct({ user_id: Schema.String });
+const AuthTest = Schema.Struct({ user_id: Schema.String, bot_id: Schema.optional(Schema.String) });
 const Posted = Schema.Struct({ channel: Schema.String, ts: Schema.String });
 const UploadSlot = Schema.Struct({ upload_url: Schema.String, file_id: Schema.String });
 const encodeUploaded = Schema.encodeSync(
@@ -252,11 +253,16 @@ export const make = Effect.fn("SlackAdapter.make")(function* (settings: SlackSet
               ConversationInfo,
             ).pipe(Effect.map((info) => info.channel.name)),
           )}`;
-    const author = user === null ? message.author : yield* personName(user);
+    const author =
+      user !== null
+        ? yield* personName(user)
+        : message.author === "you"
+          ? message.author
+          : headerSafe(message.author);
     return { ...message, where, author };
   });
 
-  const connectOnce = (botUserId: string) =>
+  const connectOnce = (self: SlackSelf) =>
     Effect.scoped(
       Effect.gen(function* () {
         const { url } = yield* call(
@@ -291,12 +297,12 @@ export const make = Effect.fn("SlackAdapter.make")(function* (settings: SlackSet
             yield* Queue.offer(inbox, { type: "stop", ...stop });
             continue;
           }
-          const outsider = readSlackOutsider(envelope.value.payload, settings, botUserId);
+          const outsider = readSlackOutsider(envelope.value.payload, settings, self.userId);
           if (outsider !== null) {
             yield* Queue.offer(inbox, { type: "outsider", ref: outsider });
             continue;
           }
-          const message = readSlackMessage(envelope.value.payload, settings, botUserId);
+          const message = readSlackMessage(envelope.value.payload, settings, self);
           // A mention arrives twice, as `message` and `app_mention`, with one id.
           if (Option.isNone(message) || seen.has(message.value.id)) continue;
           rememberBounded(seen, message.value.id);
@@ -307,10 +313,10 @@ export const make = Effect.fn("SlackAdapter.make")(function* (settings: SlackSet
 
   yield* Effect.forkIn(
     Effect.gen(function* () {
-      const { user_id: botUserId } = yield* call("auth.test", undefined, AuthTest);
+      const identity = yield* call("auth.test", undefined, AuthTest);
       yield* Effect.logInfo("Slack connected");
       // A dropped connection reconnects; Slack asks for this routinely with `disconnect`.
-      return yield* connectOnce(botUserId).pipe(
+      return yield* connectOnce({ userId: identity.user_id, botId: identity.bot_id }).pipe(
         Effect.catchCause((cause) => Effect.logWarning("Slack connection lost", { cause })),
         Effect.andThen(Effect.sleep("2 seconds")),
         Effect.forever,

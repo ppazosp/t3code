@@ -13,6 +13,7 @@ import {
 
 const settings = { trustedUserId: "UME", watchedChannels: new Set(["CWATCH"]) };
 const BOT = "UBOT";
+const SELF = { userId: BOT, botId: "BSELF" };
 
 const payload = (event: Record<string, unknown>) => ({
   team_id: "T1",
@@ -20,7 +21,7 @@ const payload = (event: Record<string, unknown>) => ({
 });
 
 const read = (event: Record<string, unknown>) =>
-  Option.getOrNull(readSlackMessage(payload(event), settings, BOT));
+  Option.getOrNull(readSlackMessage(payload(event), settings, SELF));
 
 describe("readSlackSettings", () => {
   it("watches the listed channels, or every channel the bot is in with all", () => {
@@ -69,14 +70,14 @@ describe("readSlackMessage", () => {
     const all = { ...settings, watchedChannels: "all" as const };
     assert.include(
       Option.getOrNull(
-        readSlackMessage(payload({ channel: "COTHER", user: "USOMEONE" }), all, BOT),
+        readSlackMessage(payload({ channel: "COTHER", user: "USOMEONE" }), all, SELF),
       ),
       { fromUser: false, direct: false },
     );
     // Watching every channel never opens DMs to anyone but the user.
     assert.isTrue(
       Option.isNone(
-        readSlackMessage(payload({ channel: "D2", channel_type: "im", user: "UX" }), all, BOT),
+        readSlackMessage(payload({ channel: "D2", channel_type: "im", user: "UX" }), all, SELF),
       ),
     );
   });
@@ -104,10 +105,33 @@ describe("readSlackMessage", () => {
     assert.isNull(stopped({ thread_ts: "1.1" }));
   });
 
-  it("ignores bots, edits, joins and empty messages", () => {
+  it("reads other bots in a watched channel by name, and never T3's own posts", () => {
+    assert.include(
+      read({ channel: "CWATCH", user: "UALERTS", bot_id: "B1", bot_profile: { name: "Spike" } }),
+      {
+        fromUser: false,
+        direct: false,
+        author: "Spike (bot)",
+      },
+    );
+    assert.include(
+      read({ channel: "CWATCH", subtype: "bot_message", bot_id: "B2", username: "Legacy" }),
+      {
+        author: "Legacy (bot)",
+      },
+    );
+    // A bot posting as the user's ID is still a bot, and no bot reaches T3 outside watched channels.
+    assert.include(read({ channel: "CWATCH", user: "UME", bot_id: "B1" }), { fromUser: false });
+    assert.isNull(read({ channel: "COTHER", user: "UX", bot_id: "B1", text: `<@${BOT}> do it` }));
+    assert.isNull(read({ channel: "D1", channel_type: "im", user: "UX", bot_id: "B1" }));
+    assert.isNull(read({ channel: "CWATCH", user: "UOTHER", bot_id: "BSELF" }));
+    assert.isNull(read({ channel: "CWATCH", user: BOT, bot_id: "BOTHER" }));
+  });
+
+  it("ignores edits, joins and empty messages", () => {
     for (const event of [
-      { channel: "CWATCH", user: "UX", bot_id: "B1" },
       { channel: "CWATCH", user: BOT },
+      { channel: "CWATCH", user: "UX", subtype: "bot_message" },
       { channel: "CWATCH", user: "UX", subtype: "message_changed" },
       { channel: "CWATCH", user: "UX", subtype: "channel_join" },
       { channel: "CWATCH", user: "UX", text: "   " },
