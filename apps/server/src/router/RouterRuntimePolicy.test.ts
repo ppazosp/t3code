@@ -40,7 +40,7 @@ describe("RouterRuntimePolicy.layer", () => {
       const policy = yield* resolve(["router"]);
       assert.deepStrictEqual(policy.sandboxPolicy, { type: "readOnly" });
       assert.strictEqual(policy.approvalPolicy, "never");
-      assert.include(policy.t3ToolAllowlist ?? [], "propose_task");
+      assert.include(policy.t3ToolAllowlist ?? [], "dispatch_worker");
       assert.notInclude(policy.t3ToolAllowlist ?? [], "t3_thread_launch");
       // ROUTER.md is its system prompt, and it works in an empty folder of its own.
       assert.strictEqual(policy.instructions, "# You are the router");

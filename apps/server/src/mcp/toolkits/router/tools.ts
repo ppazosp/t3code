@@ -18,9 +18,9 @@ const routerDependencies = [
   Proposals.Proposals,
 ];
 
-const ProposeTaskTool = Tool.make("propose_task", {
+const DispatchWorkerTool = Tool.make("dispatch_worker", {
   description:
-    "Router only. Propose a new worker for the user to accept or discard in T3; nothing runs until they accept. For work a thread is already doing, use route_to_thread instead. `brief` is the worker's whole instruction. `workspaceStrategy` is where it runs: a new worktree from `baseRef`, the project's `root` folder, or an `existing_worktree` path. `agent` is `codex` or `claude`; each runs on the model super-t3's config sets for it. `relatedThreadIds` names threads that worked on something related (archived ones included), for the worker to read. Set `plan` to start with a plan for review.",
+    "Router only. Start a new worker. It starts at once when the user asked you for this work themselves (typed to you in T3, or sent to you in a channel: `to me` in the header); anything else, or `propose: true`, becomes a proposal the user accepts or discards in T3. The result says which happened. For work a thread is already doing, use route_to_thread instead. `brief` is the worker's whole instruction. `workspaceStrategy` is where it runs: a new worktree from `baseRef`, the project's `root` folder, or an `existing_worktree` path. `agent` is `codex` or `claude`; each runs on the model super-t3's config sets for it. `relatedThreadIds` names threads that worked on something related (archived ones included), for the worker to read. Set `plan` to start with a plan for review. Set `propose` to have the user accept it first, such as when you had to guess the project or the scope.",
   parameters: Schema.Struct({
     title: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(120)),
     brief: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(20_000)),
@@ -29,13 +29,22 @@ const ProposeTaskTool = Tool.make("propose_task", {
     agent: Schema.Literals(["codex", "claude"]),
     relatedThreadIds: Schema.optional(Schema.Array(ThreadId).check(Schema.isMaxLength(5))),
     plan: Schema.optional(Schema.Boolean),
+    propose: Schema.optional(Schema.Boolean),
   }),
-  success: Schema.Struct({ proposalId: ScheduledTaskId }),
+  success: Schema.Union([
+    Schema.Struct({ outcome: Schema.Literal("started"), threadId: ThreadId }),
+    Schema.Struct({
+      outcome: Schema.Literal("proposed"),
+      // Named so T3 keeps it in what clients see of the result, for the proposal's card.
+      scheduledTaskId: ScheduledTaskId,
+      note: Schema.optional(Schema.String),
+    }),
+  ]),
   failure: OrchestratorMcpFailure,
   failureMode: "return",
   dependencies: routerDependencies,
 })
-  .annotate(Tool.Title, "Propose a task")
+  .annotate(Tool.Title, "Dispatch a worker")
   .annotate(Tool.Destructive, false)
   .annotate(Tool.OpenWorld, false);
 
@@ -71,4 +80,4 @@ const RequestWorkerTool = Tool.make("request_worker", {
   .annotate(Tool.Destructive, false)
   .annotate(Tool.OpenWorld, false);
 
-export const RouterToolkit = Toolkit.make(ProposeTaskTool, RouteToThreadTool, RequestWorkerTool);
+export const RouterToolkit = Toolkit.make(DispatchWorkerTool, RouteToThreadTool, RequestWorkerTool);

@@ -26,13 +26,13 @@ const routerCaller = Effect.fn("RouterTools.caller")(function* (tool: string) {
 });
 
 const handlers = {
-  // Only the router proposes and routes; workers ask it.
-  propose_task: McpToolAccess.actsAsCaller((input) =>
+  // Only the router dispatches and routes; workers ask it.
+  dispatch_worker: McpToolAccess.actsAsCaller((input) =>
     Effect.gen(function* () {
-      const routerId = yield* routerCaller("propose_task");
+      const routerId = yield* routerCaller("dispatch_worker");
       const proposals = yield* Proposals.Proposals;
-      const { id } = yield* proposals
-        .propose({
+      return yield* proposals
+        .dispatch({
           routerId,
           title: input.title,
           brief: input.brief,
@@ -41,9 +41,9 @@ const handlers = {
           agent: input.agent,
           relatedThreadIds: input.relatedThreadIds ?? [],
           plan: input.plan ?? false,
+          propose: input.propose ?? false,
         })
         .pipe(Effect.mapError((error) => failure(error.message)));
-      return { proposalId: id };
     }),
   ),
   route_to_thread: McpToolAccess.actsAsCaller((input) =>

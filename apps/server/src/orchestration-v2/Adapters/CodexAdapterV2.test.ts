@@ -161,7 +161,7 @@ describe("CodexAdapterV2 runtime policy", () => {
       runtimeMode: "full-access" as const,
       interactionMode: "default" as const,
       cwd: "/workspace",
-      t3ToolAllowlist: ["propose_task"],
+      t3ToolAllowlist: ["dispatch_worker"],
     };
     const locked = CodexAdapterV2.codexThreadRuntimeParams({
       threadId: ThreadId.make("thread-router"),
@@ -176,7 +176,7 @@ describe("CodexAdapterV2 runtime policy", () => {
     assert.isFalse(locked["mcp_servers.slack.enabled"]);
     assert.isFalse(locked["mcp_servers.linear.enabled"]);
     assert.deepEqual((locked["mcp_servers.t3-code"] as { enabled_tools: unknown }).enabled_tools, [
-      "propose_task",
+      "dispatch_worker",
     ]);
     // Any other thread keeps every tool.
     const open = CodexAdapterV2.codexThreadRuntimeParams({

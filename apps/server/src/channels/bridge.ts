@@ -55,7 +55,8 @@ export function reportTarget(thread: BridgeThread, prefixes: ReadonlyArray<strin
  * line that looks like a header inside someone's message cannot pass for one.
  */
 export function routerMessageText(channel: string, message: ChannelMessage): string {
-  return `[${channel} ${message.where} from ${message.author} ref=${message.ref}]\n${quote(message.text)}`;
+  const to = message.direct ? " to me" : "";
+  return `[${channel} ${message.where} from ${message.author}${to} ref=${message.ref}]\n${quote(message.text)}`;
 }
 
 /**

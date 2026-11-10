@@ -5,6 +5,7 @@ import { readChannelHeader, readProposalSource, withProposalSource } from "@t3to
 import {
   acceptedTags,
   briefWithRelated,
+  isUsersRequest,
   isWorkerThread,
   readWorkerRequest,
   routedText,
@@ -56,6 +57,27 @@ describe("Proposals", () => {
     );
     // Looked-up names always start with "@", so someone named "you" never reads as the user.
     assert.isFalse(readChannelHeader("[slack #eng from @you ref=slack:C01:1.1]")?.fromUser);
+  });
+
+  it("starts a worker at once only for what the user asked the router themselves", () => {
+    const typed = { text: "fix the export", createdBy: "user", creationSource: "web" };
+    const slack = (header: string) => ({
+      text: `${header}\n> fix it`,
+      createdBy: "user",
+      creationSource: "server",
+    });
+    assert.isTrue(isUsersRequest([typed]));
+    assert.isTrue(isUsersRequest([slack("[slack dm from you to me ref=slack:D1:1.1]")]));
+    // Said in passing where the bot listens, by someone else, or by a worker or another agent.
+    assert.isFalse(isUsersRequest([slack("[slack #eng from you ref=slack:C1:1.1]")]));
+    assert.isFalse(isUsersRequest([slack("[slack #eng from @Ana to me ref=slack:C1:1.1]")]));
+    assert.isFalse(
+      isUsersRequest([{ ...slack(""), text: workerRequestText({ threadId: "t1", request: "x" }) }]),
+    );
+    assert.isFalse(isUsersRequest([{ text: "fix it", createdBy: "agent", creationSource: "mcp" }]));
+    // Someone else's message in the same turn keeps the whole turn a proposal.
+    assert.isFalse(isUsersRequest([typed, slack("[slack #eng from @Ana to me ref=slack:C1:1.1]")]));
+    assert.isFalse(isUsersRequest([]));
   });
 
   it("matches effort to the model's own reasoning control, and drops options it does not have", () => {

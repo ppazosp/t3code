@@ -148,7 +148,7 @@ export function RouterSection() {
  * and workspace set, all changeable with the composer's own controls. Sending it accepts it. A
  * proposal opened before returns to its draft.
  */
-function useOpenProposal() {
+export function useOpenProposal() {
   const navigate = useNavigate();
   return async (environmentId: EnvironmentId, task: ScheduledTask) => {
     const store = useComposerDraftStore.getState();

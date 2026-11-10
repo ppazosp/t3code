@@ -22,6 +22,8 @@ import {
   type ThreadId,
   type ThreadTag,
 } from "@t3tools/contracts";
+import * as NodeCrypto from "node:crypto";
+
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -34,6 +36,7 @@ import { startText } from "../channels/bridge.ts";
 import * as Channels from "../channels/Channels.ts";
 import { CHANNELS } from "../channels/registry.ts";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
+import { ThreadLaunchService } from "../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import { ProviderRegistry } from "../provider/ProviderRegistry.ts";
 import { ScheduledTaskService } from "../scheduledTasks/ScheduledTaskService.ts";
@@ -244,8 +247,11 @@ export function routedText(input: {
   return parts.join("\n\n");
 }
 
-/** A new worker the router proposes, on the model super-t3's config sets for its agent. */
-export interface ProposeInput {
+/**
+ * A new worker the router dispatches, on the model super-t3's config sets for its agent. It starts
+ * at once only when the user asked for it; otherwise, or when the router asks, it is proposed.
+ */
+export interface DispatchInput {
   readonly routerId: ThreadId;
   readonly title: string;
   readonly brief: string;
@@ -255,6 +261,49 @@ export interface ProposeInput {
   /** Threads that worked on something related, named in the brief for context. */
   readonly relatedThreadIds: ReadonlyArray<ThreadId>;
   readonly plan: boolean;
+  /** The router wants the user to accept it first, even though they asked. */
+  readonly propose: boolean;
+}
+
+export type DispatchResult =
+  | { readonly outcome: "started"; readonly threadId: ThreadId }
+  | {
+      readonly outcome: "proposed";
+      readonly scheduledTaskId: ScheduledTaskId;
+      readonly note?: string;
+    };
+
+/**
+ * The user's own words to the bot. What they say in passing where it listens is information, like
+ * anyone's: it neither wakes a worker, moves a conversation, nor starts work at once.
+ */
+function isUsersOwn(header: { readonly fromUser: boolean; readonly direct: boolean }): boolean {
+  return header.fromUser && header.direct;
+}
+
+/** A message the router's current turn answers, as far as who sent it goes. */
+interface RouterMessage {
+  readonly text: string;
+  readonly createdBy: string;
+  readonly creationSource: string;
+}
+
+/**
+ * Whether the user asked for this turn's work themselves: every message it answers is one they
+ * typed in T3, or a channel message they sent to the bot. Their words said in passing where the
+ * bot listens, someone else's message, a worker's request or another agent's message do not count.
+ */
+export function isUsersRequest(messages: ReadonlyArray<RouterMessage>): boolean {
+  return (
+    messages.length > 0 &&
+    messages.every((message) => {
+      if (message.creationSource !== "server") {
+        return message.createdBy === "user" && message.creationSource !== "mcp";
+      }
+      const header = readChannelHeader(message.text);
+      return header !== null && isUsersOwn(header);
+    })
+  );
 }
 
 /** New information the router passes straight to a thread that is working on that matter. */
@@ -308,16 +357,15 @@ export function routeRefusal(
 }
 
 /**
- * What the router does with work. A proposal starts a new worker: a paused scheduled task the user
- * accepts by sending its draft; the conversation it came from is kept here and tagged on the worker.
+ * What the router does with work. A new worker starts at once when the user asked for it, or is
+ * proposed: a paused scheduled task the user accepts by sending its draft; the conversation it came
+ * from is kept here and tagged on the worker.
  * New information on work a thread is already doing is routed to it directly, with no proposal.
  */
 export class Proposals extends Context.Service<
   Proposals,
   {
-    readonly propose: (
-      input: ProposeInput,
-    ) => Effect.Effect<{ readonly id: ScheduledTaskId }, ProposalError>;
+    readonly dispatch: (input: DispatchInput) => Effect.Effect<DispatchResult, ProposalError>;
     readonly route: (input: RouteInput) => Effect.Effect<void, ProposalError>;
     /** A worker asks the router for a new worker, for work outside its task. */
     readonly askRouter: (input: AskRouterInput) => Effect.Effect<void, ProposalError>;
@@ -334,6 +382,7 @@ export const layer = Layer.effect(
     const scheduled = yield* ScheduledTaskService;
     const threads = yield* ThreadManagementService.ThreadManagementService;
     const engine = yield* Orchestrator.OrchestratorV2;
+    const threadLaunch = yield* ThreadLaunchService;
     const channels = yield* Channels.Channels;
     const providerRegistry = yield* ProviderRegistry;
     const home = yield* SuperT3Home;
@@ -457,9 +506,24 @@ export const layer = Layer.effect(
       const header = readChannelHeader(trigger.text);
       return {
         origin: header?.ref ?? null,
-        fromUser: header?.fromUser === true,
+        fromUser: header !== null && isUsersOwn(header),
         source: yield* serverSourceOf(trigger.text, DateTime.formatIso(trigger.createdAt)),
       };
+    });
+
+    /** The user messages the router's current turn answers. */
+    const currentMessages = Effect.fn("Proposals.currentMessages")(function* (routerId: ThreadId) {
+      const router = yield* threads
+        .getThreadProjection(routerId)
+        .pipe(Effect.mapError(failed("Could not read the router thread.")));
+      // Only what this turn is answering: an older message cannot lend it the user's trust.
+      const currentRun = router.runs.reduce<(typeof router.runs)[number] | undefined>(
+        (latest, run) => (latest === undefined || run.ordinal > latest.ordinal ? run : latest),
+        undefined,
+      );
+      return router.messages.filter(
+        (message) => message.role === "user" && message.runId === currentRun?.id,
+      );
     });
 
     /**
@@ -471,17 +535,7 @@ export const layer = Layer.effect(
       routerId: ThreadId,
       ref: string | undefined,
     ) {
-      const router = yield* threads
-        .getThreadProjection(routerId)
-        .pipe(Effect.mapError(failed("Could not read the router thread.")));
-      // Only what this turn is answering: an older message's ref cannot lend it the user's trust.
-      const currentRun = router.runs.reduce<(typeof router.runs)[number] | undefined>(
-        (latest, run) => (latest === undefined || run.ordinal > latest.ordinal ? run : latest),
-        undefined,
-      );
-      const userMessages = router.messages.filter(
-        (message) => message.role === "user" && message.runId === currentRun?.id,
-      );
+      const userMessages = yield* currentMessages(routerId);
       if (ref === undefined) {
         const latest = userMessages.at(-1);
         // A worker's request has no ref: it is someone other than the user, like a channel message.
@@ -511,12 +565,12 @@ export const layer = Layer.effect(
       }
       return {
         origin: header.ref,
-        fromUser: header.fromUser,
+        fromUser: isUsersOwn(header),
         source: sourceOf(message.text, DateTime.formatIso(message.createdAt)),
       };
     });
 
-    const newWorker = Effect.fn("Proposals.newWorker")(function* (target: ProposeInput) {
+    const newWorker = Effect.fn("Proposals.newWorker")(function* (target: DispatchInput) {
       const choice = (yield* home.config).workers[target.agent];
       const providers = yield* providerRegistry.getProviders;
       if (!providers.some((provider) => provider.instanceId === choice.instanceId)) {
@@ -540,44 +594,97 @@ export const layer = Layer.effect(
       };
     });
 
+    const propose = Effect.fn("Proposals.propose")(function* (input: DispatchInput) {
+      const { origin, fromUser, source } = yield* triggerOf(input.routerId);
+      const where = yield* newWorker(input);
+      const { task } = yield* scheduled
+        .upsert({
+          title: input.title,
+          prompt:
+            source === null
+              ? briefWithRelated(input.brief, where.related)
+              : withProposalSource(briefWithRelated(input.brief, where.related), source),
+          enabled: false,
+          schedule: { type: "once", runAt: PROPOSAL_RUN_AT },
+          projectId: where.projectId,
+          workspaceStrategy: where.workspaceStrategy,
+          modelSelection: where.modelSelection,
+          runtimeMode: "full-access",
+          interactionMode: input.plan ? "plan" : "default",
+          createdBy: "agent",
+          creationSource: "server",
+        })
+        .pipe(Effect.mapError((error) => new ProposalError({ message: error.message })));
+      if (origin !== null) {
+        yield* sql`INSERT OR REPLACE INTO super_t3_proposal_origins (task_id, origin, from_user)
+          VALUES (${task.id}, ${origin}, ${fromUser ? 1 : 0})`.pipe(
+          Effect.mapError(failed("Could not remember where the proposal came from.")),
+        );
+        if (fromUser) {
+          yield* channels
+            .proposed(origin)
+            .pipe(
+              Effect.catchCause((cause) =>
+                Effect.logWarning("Could not mark a proposed message handled", { cause }),
+              ),
+            );
+        }
+      }
+      return task.id;
+    });
+
     return Proposals.of({
-      propose: Effect.fn("Proposals.propose")(function* (input) {
-        const { origin, fromUser, source } = yield* triggerOf(input.routerId);
+      dispatch: Effect.fn("Proposals.dispatch")(function* (input) {
+        const asked = isUsersRequest(yield* currentMessages(input.routerId));
+        if (input.propose || !asked) {
+          const scheduledTaskId = yield* propose(input);
+          return input.propose
+            ? { outcome: "proposed" as const, scheduledTaskId }
+            : {
+                outcome: "proposed" as const,
+                scheduledTaskId,
+                note: "Proposed instead: a worker starts at once only for what the user asked you themselves.",
+              };
+        }
+        const { origin, fromUser } = yield* triggerOf(input.routerId);
         const where = yield* newWorker(input);
-        const { task } = yield* scheduled
-          .upsert({
-            title: input.title,
-            prompt:
-              source === null
-                ? briefWithRelated(input.brief, where.related)
-                : withProposalSource(briefWithRelated(input.brief, where.related), source),
-            enabled: false,
-            schedule: { type: "once", runAt: PROPOSAL_RUN_AT },
+        // Unique per call: the router can dispatch several workers at once.
+        const key = `dispatch:${input.routerId}:${NodeCrypto.randomUUID()}`;
+        const { add } = acceptedTags({
+          current: [],
+          origin: origin === null ? null : { ref: origin, fromUser },
+          continuing: false,
+          channels: CHANNELS.map((channel) => channel.name),
+        });
+        const launched = yield* threadLaunch
+          .launch({
+            commandId: CommandId.make(key),
             projectId: where.projectId,
-            workspaceStrategy: where.workspaceStrategy,
+            title: input.title,
             modelSelection: where.modelSelection,
             runtimeMode: "full-access",
             interactionMode: input.plan ? "plan" : "default",
+            workspaceStrategy: where.workspaceStrategy,
+            tags: add.map((tag) => tag as ThreadTag),
+            initialMessage: {
+              messageId: MessageId.make(`${key}:brief`),
+              text: briefWithRelated(input.brief, where.related),
+              attachments: [],
+            },
             createdBy: "agent",
             creationSource: "server",
           })
           .pipe(Effect.mapError((error) => new ProposalError({ message: error.message })));
-        if (origin !== null) {
-          yield* sql`INSERT OR REPLACE INTO super_t3_proposal_origins (task_id, origin, from_user)
-            VALUES (${task.id}, ${origin}, ${fromUser ? 1 : 0})`.pipe(
-            Effect.mapError(failed("Could not remember where the proposal came from.")),
-          );
-          if (fromUser) {
-            yield* channels
-              .proposed(origin)
-              .pipe(
-                Effect.catchCause((cause) =>
-                  Effect.logWarning("Could not mark a proposed message handled", { cause }),
-                ),
-              );
-          }
+        if (origin !== null && fromUser) {
+          yield* channels
+            .proposed(origin)
+            .pipe(
+              Effect.catchCause((cause) =>
+                Effect.logWarning("Could not mark a dispatched message handled", { cause }),
+              ),
+            );
         }
-        return { id: task.id };
+        return { outcome: "started" as const, threadId: launched.threadId };
       }),
       route: Effect.fn("Proposals.route")(function* (input) {
         const shell = yield* threads

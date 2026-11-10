@@ -421,7 +421,7 @@ describe("ClaudeAdapterV2 runtime query policy", () => {
       cwd: "/workspace",
       approvalPolicy: "never",
       sandboxPolicy: { type: "readOnly" },
-      t3ToolAllowlist: ["t3_thread_list", "propose_task"],
+      t3ToolAllowlist: ["t3_thread_list", "dispatch_worker"],
     });
     const queryPolicy = ClaudeAdapterV2.claudeRuntimeQueryPolicyForRuntimePolicy(runtimePolicy);
     assert.deepEqual(queryPolicy, {
@@ -441,7 +441,7 @@ describe("ClaudeAdapterV2 runtime query policy", () => {
     });
     assert.deepEqual(overrides.allowedTools, [
       "mcp__t3-code__t3_thread_list",
-      "mcp__t3-code__propose_task",
+      "mcp__t3-code__dispatch_worker",
     ]);
     assert.deepEqual(Object.keys(overrides.mcpServers ?? {}), ["t3-code"]);
     const options = ClaudeAdapterV2.makeClaudeQueryOptions({

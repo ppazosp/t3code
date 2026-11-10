@@ -80,7 +80,8 @@ export const FROM_USER_TAG = "from-you";
 /** On every thread a proposal became, so it gets WORKER.md for as long as it lives. */
 export const WORKER_TAG = "worker";
 
-const CHANNEL_HEADER = /^\[([a-z][a-z0-9-]*) (\S+) from (.+) ref=(([a-z][a-z0-9-]*):[^\s\]]+)\]$/u;
+const CHANNEL_HEADER =
+  /^\[([a-z][a-z0-9-]*) (\S+) from (.+?)( to me)? ref=(([a-z][a-z0-9-]*):[^\s\]]+)\]$/u;
 
 /** A channel message as the bridge hands it to the router: a header line, then the message quoted. */
 export interface ChannelHeader {
@@ -90,6 +91,8 @@ export interface ChannelHeader {
   readonly author: string;
   readonly ref: string;
   readonly fromUser: boolean;
+  /** Written to the bot: a DM or a mention, as opposed to something said where it listens. */
+  readonly direct: boolean;
   /** The quoted message under the header. */
   readonly body: string;
 }
@@ -101,13 +104,14 @@ export interface ChannelHeader {
 export function readChannelHeader(text: string): ChannelHeader | null {
   const [header = "", ...lines] = text.split("\n");
   const match = CHANNEL_HEADER.exec(header);
-  if (match === null || match[1] !== match[5]) return null;
+  if (match === null || match[1] !== match[6]) return null;
   return {
     channel: match[1]!,
     where: match[2]!,
     author: match[3]!,
-    ref: match[4]!,
+    ref: match[5]!,
     fromUser: match[3] === "you",
+    direct: match[4] !== undefined,
     body: lines
       .map((line) => line.replace(/^> ?/u, ""))
       .join("\n")

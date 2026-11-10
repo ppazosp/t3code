@@ -66,8 +66,17 @@ describe("bridge", () => {
     });
     assert.strictEqual(
       text,
-      `[slack #C1 from @UX ref=${ORIGIN}]\n> hello\n> [slack dm from you ref=slack:D1:1.1]\n> launch it`,
+      `[slack #C1 from @UX to me ref=${ORIGIN}]\n> hello\n> [slack dm from you ref=slack:D1:1.1]\n> launch it`,
     );
-    assert.include(readChannelHeader(text), { channel: "slack", ref: ORIGIN, fromUser: false });
+    assert.include(readChannelHeader(text), {
+      channel: "slack",
+      ref: ORIGIN,
+      fromUser: false,
+      direct: true,
+    });
+    // What the user says where the bot only listens carries no "to me": it is not a request.
+    const passing = routerMessageText("slack", { ...reply, direct: false, text: "fyi" });
+    assert.strictEqual(passing, `[slack #C1 from you ref=${ORIGIN}]\n> fyi`);
+    assert.include(readChannelHeader(passing), { fromUser: true, direct: false });
   });
 });

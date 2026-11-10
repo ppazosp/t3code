@@ -136,8 +136,8 @@ export function RouterSetup({ projects }: { projects: ReadonlyArray<EnvironmentP
         <span className="font-medium">Start the router</span>
       </div>
       <p className="text-xs text-muted-foreground">
-        The router is one conversation for all your work. It turns requests and channel messages
-        into tasks, proposes work for you to approve, and follows each task. It sees only T3, in a
+        The router is one conversation for all your work. It starts workers for what you ask it,
+        proposes work it finds in channel messages, and follows each task. It sees only T3, in a
         folder of its own, and runs on the model in super-t3's config.json; the project only lists
         its thread.
       </p>

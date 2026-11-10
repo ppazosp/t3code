@@ -11,8 +11,8 @@ export function isRouterThread(thread: { readonly tags?: ReadonlyArray<string> |
 }
 
 /**
- * The router's T3 tools: see which workers there are and what they are doing, propose new ones, and
- * answer the user in a channel. It starts nothing itself.
+ * The router's T3 tools: see which workers there are and what they are doing, dispatch new ones, and
+ * answer the user in a channel. It runs nothing itself.
  */
 export const ROUTER_TOOLS: ReadonlyArray<string> = [
   "orchestrator_capabilities",
@@ -22,14 +22,14 @@ export const ROUTER_TOOLS: ReadonlyArray<string> = [
   "t3_thread_read",
   "t3_thread_search",
   "list_scheduled_tasks",
-  "propose_task",
+  "dispatch_worker",
   "route_to_thread",
   "channel_reply",
   "channel_read",
 ];
 
 /**
- * The router only reads and proposes. It runs read-only in an empty folder, never asks for approval,
+ * The router only reads and dispatches. It runs read-only in an empty folder, never asks for approval,
  * gets only the T3 tools it needs (Codex and Claude enforce that), and takes ROUTER.md as its system
  * prompt, read on every turn so an edit applies on the next one.
  */

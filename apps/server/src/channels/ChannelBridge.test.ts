@@ -256,7 +256,10 @@ describe("ChannelBridge", () => {
         sent.map((call) => call.threadId),
         ["router", "router"],
       );
-      assert.match(sent[0]!.text, /^\[slack #eng from you ref=slack:C1:1700000000\.000900\]/u);
+      assert.match(
+        sent[0]!.text,
+        /^\[slack #eng from you to me ref=slack:C1:1700000000\.000900\]/u,
+      );
       assert.deepStrictEqual(marks, [["m1", "seen"]]);
       assert.deepStrictEqual(statuses, [[elsewhere, "working"]]);
       assert.deepStrictEqual(state.waiting.get(elsewhere), ["m1"]);
