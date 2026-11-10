@@ -23,6 +23,26 @@ export interface SlackSettings {
 
 const SLACK_API_URL = "https://slack.com/api";
 
+/**
+ * A name safe inside the router's message header. Brackets and newlines would break it, and the
+ * header's own words (" from ", " to me", " ref=") must not appear in a name anyone can choose.
+ */
+export const headerSafe = (name: string) =>
+  name
+    .replaceAll(/[\][\n\r]/gu, " ")
+    .replaceAll(/(^|\s)(from|to me|ref=)(?=\s|$)/giu, " ")
+    .replaceAll(/ref=/giu, " ")
+    .replaceAll(/\s+/gu, " ")
+    .trim();
+
+// A bot names itself, so its name is cleaned here and can never pass for a person's "@" or "you".
+const botAuthor = (name: string | undefined) =>
+  `${
+    headerSafe(name ?? "")
+      .replace(/^(@|you(?=\s|$))+/iu, "")
+      .trim() || "a bot"
+  } (bot)`;
+
 export const SocketEnvelope = Schema.Struct({
   type: Schema.String,
   envelope_id: Schema.optional(Schema.String),
@@ -99,7 +119,7 @@ export function readSlackMessage(
         direct: isDm || mentionsBot,
         where: isDm ? "dm" : `#${message.channel}`,
         author: bot
-          ? `${message.bot_profile?.name?.trim() || message.username?.trim() || "a bot"} (bot)`
+          ? botAuthor(message.bot_profile?.name || message.username)
           : fromUser
             ? "you"
             : `@${message.user}`,
