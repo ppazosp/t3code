@@ -20,7 +20,7 @@ const routerDependencies = [
 
 const DispatchWorkerTool = Tool.make("dispatch_worker", {
   description:
-    "Router only. Start a new worker. It starts at once when the user asked you for this work themselves (typed to you in T3, or sent to you in a channel: `to me` in the header); anything else, or `propose: true`, becomes a proposal the user accepts or discards in T3. The result says which happened. For work a thread is already doing, use route_to_thread instead. `brief` is the worker's whole instruction. `workspaceStrategy` is where it runs: a new worktree from `baseRef`, the project's `root` folder, or an `existing_worktree` path. `agent` is `codex` or `claude`; each runs on the model super-t3's config sets for it. `relatedThreadIds` names threads that worked on something related (archived ones included), for the worker to read. Set `plan` to start with a plan for review. Set `propose` to have the user accept it first, such as when you had to guess the project or the scope.",
+    "Router only. Start a new worker. It starts at once when the user asked you for this work themselves (typed to you in T3, or sent to you in a channel: `to me` in the header); anything else, or `propose: true`, becomes a proposal the user accepts or discards in T3. The result says which happened, with a \`link\` to a started worker to put in your reply. For work a thread is already doing, use route_to_thread instead. `brief` is the worker's whole instruction. `workspaceStrategy` is where it runs: a new worktree from `baseRef`, the project's `root` folder, or an `existing_worktree` path. `agent` is `codex` or `claude`; each runs on the model super-t3's config sets for it. `relatedThreadIds` names threads that worked on something related (archived ones included), for the worker to read. Set `plan` to start with a plan for review. Set `propose` to have the user accept it first, such as when you had to guess the project or the scope.",
   parameters: Schema.Struct({
     title: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(120)),
     brief: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(20_000)),
@@ -32,7 +32,7 @@ const DispatchWorkerTool = Tool.make("dispatch_worker", {
     propose: Schema.optional(Schema.Boolean),
   }),
   success: Schema.Union([
-    Schema.Struct({ outcome: Schema.Literal("started"), threadId: ThreadId }),
+    Schema.Struct({ outcome: Schema.Literal("started"), threadId: ThreadId, link: Schema.String }),
     Schema.Struct({
       outcome: Schema.Literal("proposed"),
       // Named so T3 keeps it in what clients see of the result, for the proposal's card.
@@ -56,7 +56,7 @@ const RouteToThreadTool = Tool.make("route_to_thread", {
     ref: Schema.optional(Schema.String),
     note: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(4000)),
   }),
-  success: Schema.Struct({ routed: Schema.Literal(true) }),
+  success: Schema.Struct({ routed: Schema.Literal(true), link: Schema.String }),
   failure: OrchestratorMcpFailure,
   failureMode: "return",
   dependencies: routerDependencies,

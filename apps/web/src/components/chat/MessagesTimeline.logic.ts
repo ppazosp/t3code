@@ -68,7 +68,6 @@ import { htmlRenderReferencesEqual, type HtmlRenderReference } from "@t3tools/sh
 import { mcpAppReferencesEqual, type McpAppReference } from "@t3tools/shared/mcpApp";
 import { dynamicToolTitle } from "@t3tools/shared/toolActivity";
 import { formatWorkspaceRelativePath } from "../../filePathDisplay";
-import { routerActionsByRun, sameRouterActions, type RouterAction } from "../router/routerActions";
 import {
   collectToolFilePaths,
   formatReadToolLabel,
@@ -595,8 +594,6 @@ type MessagesTimelineRowContent =
       showAssistantCopyButton: boolean;
       assistantCopyStreaming: boolean;
       assistantTurnDiffSummary?: TurnDiffSummary | undefined;
-      /** What a router did in the turn this reply ends: workers started, messages routed. */
-      routerActions?: ReadonlyArray<RouterAction>;
       revertTurnCount?: number | undefined;
       /** Another of your messages follows directly, so the two sit closer together. */
       groupedWithNext?: boolean;
@@ -1437,9 +1434,6 @@ export function deriveMessagesTimelineRows(input: {
     : new Map<MessageId, number>();
   const nextRows: MessagesTimelineRow[] = [];
   const terminalAssistantMessageIds = deriveTerminalAssistantMessageIds(timelineEntries);
-  const routerActions = routerActionsByRun(
-    timelineEntries.flatMap((entry) => (entry.kind === "work" ? [entry.entry] : [])),
-  );
   const failedRunIds = failedTimelineRunIds(timelineEntries, input.latestRun ?? null);
   const itemizedRunIds = itemizedFailedRunIds(timelineEntries, failedRunIds);
   const liveSubagentEntryIds = liveSubagentCardEntryIds(timelineEntries);
@@ -2038,16 +2032,11 @@ export function deriveMessagesTimelineRows(input: {
       terminalAssistantMessageIds.has(timelineEntry.message.id) &&
       !assistantResponseStillInProgress;
 
-    const turnRouterActions =
-      showAssistantMeta && timelineEntry.message.runId != null
-        ? routerActions.get(timelineEntry.message.runId)
-        : undefined;
     nextRows.push({
       kind: "message",
       id: timelineEntry.id,
       createdAt: timelineEntry.createdAt,
       message: timelineEntry.message,
-      ...(turnRouterActions === undefined ? {} : { routerActions: turnRouterActions }),
       ...(timelineEntry.projectedItem === undefined
         ? {}
         : { projectedItem: timelineEntry.projectedItem }),
@@ -2518,7 +2507,6 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
         a.showAssistantCopyButton === bm.showAssistantCopyButton &&
         a.assistantCopyStreaming === bm.assistantCopyStreaming &&
         a.assistantTurnDiffSummary === bm.assistantTurnDiffSummary &&
-        sameRouterActions(a.routerActions, bm.routerActions) &&
         a.revertTurnCount === bm.revertTurnCount &&
         a.groupedWithNext === bm.groupedWithNext &&
         a.groupedWithPrevious === bm.groupedWithPrevious &&

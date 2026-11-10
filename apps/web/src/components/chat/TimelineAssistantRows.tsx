@@ -23,7 +23,6 @@ import { formatChatTimestampTooltip, formatDayAwareTimestamp } from "../../times
 import { useV2ItemSupport } from "../../state/v2ItemSupport";
 import { TimelineRowCtx, TimelineRowActivityCtx, type TimelineRow } from "./timelineRowContext";
 import { MESSAGE_HEADING_LEVEL, MessageAuthorHeading } from "./TimelineRowParts";
-import { RouterActionCards } from "../router/RouterActionCards";
 
 export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
@@ -33,47 +32,34 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
     row.projectedItem?.item.id,
   );
   const text = liveText ?? row.message.text;
-  const routerActions = row.routerActions ?? [];
-  // A router ends a turn without text when what it did is the answer; its actions show instead.
-  const messageText =
-    text || (row.message.streaming || routerActions.length > 0 ? "" : "(empty response)");
+  const messageText = text || (row.message.streaming ? "" : "(empty response)");
 
   return (
     <>
       <div className="relative min-w-0 px-1 py-0.5">
         <MessageAuthorHeading>T3 Code</MessageAuthorHeading>
-        {messageText === "" && routerActions.length > 0 ? null : (
-          <div data-thread-find-text="true">
-            <AssistantCitationSource
-              messageId={row.message.id}
-              {...(ctx.threadRef ? { threadRef: ctx.threadRef } : {})}
-              itemKey={row.id}
-              request={ctx.citationRequest}
-              listRef={ctx.listRef}
-            >
-              <ChatMarkdown
-                text={messageText}
-                cwd={ctx.markdownCwd}
-                threadRef={ctx.threadRef ?? undefined}
-                isStreaming={Boolean(row.message.streaming)}
-                lineBreaks={shouldPreserveAssistantLineBreaks(messageText)}
-                skills={ctx.skills}
-                headingLevelOffset={MESSAGE_HEADING_LEVEL}
-                onUseArtifactTemplate={ctx.onUseArtifactTemplate}
-                onRunShellCommand={ctx.onRunShellCommand}
-                onImageExpand={ctx.onImageExpand}
-              />
-            </AssistantCitationSource>
-          </div>
-        )}
-        {routerActions.length > 0 ? (
-          <div className={messageText === "" ? undefined : "mt-2"}>
-            <RouterActionCards
-              environmentId={ctx.activeThreadEnvironmentId}
-              actions={routerActions}
+        <div data-thread-find-text="true">
+          <AssistantCitationSource
+            messageId={row.message.id}
+            {...(ctx.threadRef ? { threadRef: ctx.threadRef } : {})}
+            itemKey={row.id}
+            request={ctx.citationRequest}
+            listRef={ctx.listRef}
+          >
+            <ChatMarkdown
+              text={messageText}
+              cwd={ctx.markdownCwd}
+              threadRef={ctx.threadRef ?? undefined}
+              isStreaming={Boolean(row.message.streaming)}
+              lineBreaks={shouldPreserveAssistantLineBreaks(messageText)}
+              skills={ctx.skills}
+              headingLevelOffset={MESSAGE_HEADING_LEVEL}
+              onUseArtifactTemplate={ctx.onUseArtifactTemplate}
+              onRunShellCommand={ctx.onRunShellCommand}
+              onImageExpand={ctx.onImageExpand}
             />
-          </div>
-        ) : null}
+          </AssistantCitationSource>
+        </div>
         {ctx.onOpenTurnDiff ? (
           <AssistantChangedFilesSection
             turnSummary={row.assistantTurnDiffSummary}
