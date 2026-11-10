@@ -5,6 +5,7 @@ import { readChannelHeader, readProposalSource, withProposalSource } from "@t3to
 import {
   acceptedTags,
   briefWithRelated,
+  currentRunMessages,
   isUsersRequest,
   isWorkerThread,
   readWorkerRequest,
@@ -78,6 +79,28 @@ describe("Proposals", () => {
     // Someone else's message in the same turn keeps the whole turn a proposal.
     assert.isFalse(isUsersRequest([typed, slack("[slack #eng from @Ana to me ref=slack:C1:1.1]")]));
     assert.isFalse(isUsersRequest([]));
+    // Trust comes from the run making the call, never from one only queued behind it.
+    const message = (runId: string) => ({ role: "user", runId });
+    assert.deepStrictEqual(
+      currentRunMessages({
+        runs: [
+          { id: "r1", status: "running" },
+          { id: "r2", status: "queued" },
+        ],
+        messages: [message("r1"), message("r2")],
+      }),
+      [message("r1")],
+    );
+    assert.deepStrictEqual(
+      currentRunMessages({
+        runs: [
+          { id: "r1", status: "completed" },
+          { id: "r2", status: "queued" },
+        ],
+        messages: [message("r2")],
+      }),
+      [],
+    );
   });
 
   it("matches effort to the model's own reasoning control, and drops options it does not have", () => {

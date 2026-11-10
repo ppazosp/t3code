@@ -22,8 +22,6 @@ import {
   type ThreadId,
   type ThreadTag,
 } from "@t3tools/contracts";
-import * as NodeCrypto from "node:crypto";
-
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -281,6 +279,26 @@ function isUsersOwn(header: { readonly fromUser: boolean; readonly direct: boole
   return header.fromUser && header.direct;
 }
 
+/** Runs that can be making a tool call now; a queued run has not started. */
+const ACTIVE_RUN_STATUSES = new Set(["starting", "running", "waiting"]);
+
+/**
+ * The user messages the router's current turn answers: those of its one active run. With none, or
+ * more than one, nothing counts, so trust can never come from a run that is only queued.
+ */
+export function currentRunMessages<
+  Message extends { readonly role: string; readonly runId: string | null },
+>(router: {
+  readonly runs: ReadonlyArray<{ readonly id: string; readonly status: string }>;
+  readonly messages: ReadonlyArray<Message>;
+}): ReadonlyArray<Message> {
+  const active = router.runs.filter((run) => ACTIVE_RUN_STATUSES.has(run.status));
+  if (active.length !== 1) return [];
+  return router.messages.filter(
+    (message) => message.role === "user" && message.runId === active[0]!.id,
+  );
+}
+
 /** A message the router's current turn answers, as far as who sent it goes. */
 interface RouterMessage {
   readonly text: string;
@@ -383,6 +401,7 @@ export const layer = Layer.effect(
     const threads = yield* ThreadManagementService.ThreadManagementService;
     const engine = yield* Orchestrator.OrchestratorV2;
     const threadLaunch = yield* ThreadLaunchService;
+    let dispatched = 0;
     const channels = yield* Channels.Channels;
     const providerRegistry = yield* ProviderRegistry;
     const home = yield* SuperT3Home;
@@ -495,11 +514,8 @@ export const layer = Layer.effect(
 
     /** The channel message the router is acting on: only a message the server wrote counts. */
     const triggerOf = Effect.fn("Proposals.triggerOf")(function* (routerId: ThreadId) {
-      const router = yield* threads
-        .getThreadProjection(routerId)
-        .pipe(Effect.mapError(failed("Could not read the router thread.")));
       // Typed text cannot fake where it came from: only the server writes channel messages.
-      const trigger = router.messages.findLast((message) => message.role === "user");
+      const trigger = (yield* currentMessages(routerId)).at(-1);
       if (trigger?.creationSource !== "server") {
         return { origin: null, fromUser: false, source: null };
       }
@@ -516,14 +532,8 @@ export const layer = Layer.effect(
       const router = yield* threads
         .getThreadProjection(routerId)
         .pipe(Effect.mapError(failed("Could not read the router thread.")));
-      // Only what this turn is answering: an older message cannot lend it the user's trust.
-      const currentRun = router.runs.reduce<(typeof router.runs)[number] | undefined>(
-        (latest, run) => (latest === undefined || run.ordinal > latest.ordinal ? run : latest),
-        undefined,
-      );
-      return router.messages.filter(
-        (message) => message.role === "user" && message.runId === currentRun?.id,
-      );
+      // Only what this turn is answering: an older or queued message cannot lend it the user's trust.
+      return currentRunMessages(router);
     });
 
     /**
@@ -648,8 +658,10 @@ export const layer = Layer.effect(
         }
         const { origin, fromUser } = yield* triggerOf(input.routerId);
         const where = yield* newWorker(input);
-        // Unique per call: the router can dispatch several workers at once.
-        const key = `dispatch:${input.routerId}:${NodeCrypto.randomUUID()}`;
+        // Unique per call: the router can dispatch several workers in the same millisecond.
+        dispatched += 1;
+        const now = DateTime.toEpochMillis(yield* DateTime.now);
+        const key = `dispatch:${input.routerId}:${now}:${dispatched}`;
         const { add } = acceptedTags({
           current: [],
           origin: origin === null ? null : { ref: origin, fromUser },
