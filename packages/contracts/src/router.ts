@@ -129,3 +129,44 @@ export function channelSourceLabels(header: Pick<ChannelHeader, "where" | "autho
     author: header.fromUser ? "You" : header.author.replace(/^@/u, ""),
   };
 }
+
+const quoted = (text: string) =>
+  text
+    .split("\n")
+    .map((line) => `> ${line}`)
+    .join("\n");
+
+const WORKER_REQUEST_HEADER = /^\[worker thread=([^\s\]]+)\]$/u;
+
+/**
+ * A worker's request as the router gets it: a header naming only the worker's thread, then its words
+ * quoted. Its title stays out of the header, since a title is free text the router must not trust.
+ */
+export function workerRequestText(input: {
+  readonly threadId: string;
+  readonly request: string;
+}): string {
+  return `[worker thread=${input.threadId}]\n${quoted(input.request)}`;
+}
+
+/**
+ * Reads a request the server wrote for the router from a worker. Only the first line counts, so a
+ * header a worker typed inside its request, which arrives quoted, never reads as one.
+ */
+export interface WorkerRequest {
+  readonly threadId: string;
+  readonly body: string;
+}
+
+export function readWorkerRequest(text: string): WorkerRequest | null {
+  const [header = "", ...lines] = text.split("\n");
+  const match = WORKER_REQUEST_HEADER.exec(header);
+  if (match === null) return null;
+  return {
+    threadId: match[1]!,
+    body: lines
+      .map((line) => line.replace(/^> ?/u, ""))
+      .join("\n")
+      .trim(),
+  };
+}

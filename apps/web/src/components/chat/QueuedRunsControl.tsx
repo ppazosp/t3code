@@ -12,7 +12,7 @@ import type {
   RunId,
   ThreadId,
 } from "@t3tools/contracts";
-import { readChannelHeader } from "@t3tools/contracts";
+import { readChannelHeader, readWorkerRequest } from "@t3tools/contracts";
 import { resolveUserMessagePresentation } from "@t3tools/client-runtime/user-message";
 import { Link } from "@tanstack/react-router";
 import {
@@ -38,7 +38,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type { TimestampFormat } from "@t3tools/contracts/settings";
 import { GuestMessageName } from "./guestMessageStyle";
 import { TimelineRowTimestamp } from "./TimelineRowParts";
-import { ChannelSourceLine } from "../router/ChannelMessageRow";
+import { ChannelSourceLine, WorkerSourceLine } from "../router/ChannelMessageRow";
 import { FoldedMessageHeader, useScheduledTaskTitle } from "./TimelineUserMessageRow";
 
 export interface EditQueuedRunRequest {
@@ -411,6 +411,8 @@ function QueuedMessage(props: {
   // A channel message waiting for the router shows where it came from, not the header it reads.
   const channel =
     props.message?.creationSource === "server" ? readChannelHeader(props.message.text) : null;
+  const workerRequest =
+    props.message?.creationSource === "server" ? readWorkerRequest(props.message.text) : null;
   const attribution = presentation?.attribution ?? null;
   const scheduledTaskId = presentation?.scheduledTaskId;
   const senderThreadId = props.message?.senderThreadId;
@@ -495,9 +497,17 @@ function QueuedMessage(props: {
               </span>
             ) : null}
             {channel === null ? null : <ChannelSourceLine header={channel} />}
+            {workerRequest === null ? null : (
+              <WorkerSourceLine
+                environmentId={props.environmentId}
+                threadId={workerRequest.threadId}
+              />
+            )}
             {/* In full, like a sent turn: a queued message is read before it is sent. */}
             {channel !== null ? (
               <p className="whitespace-pre-wrap wrap-anywhere">{channel.body}</p>
+            ) : workerRequest !== null ? (
+              <p className="whitespace-pre-wrap wrap-anywhere">{workerRequest.body}</p>
             ) : props.previewText ? (
               <p className="whitespace-pre-wrap wrap-anywhere">{props.previewText}</p>
             ) : null}

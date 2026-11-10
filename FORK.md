@@ -86,7 +86,7 @@ These upstream files carry small edits, and are where a merge can conflict:
 - `apps/web/src/routes/_chat.index.tsx`: the home page opens the router.
 - `apps/web/src/components/ChatView.tsx`: a proposal's chat shows its tab instead of the new-thread headline, and keeps plan mode when the router asked for a plan, even with T3's plan mode setting off.
 - `apps/web/src/components/chat/ChatComposer.tsx`: the same plan mode rule for a proposal's composer.
-- `apps/web/src/components/chat/TimelineUserMessageRow.tsx`: a channel message the server wrote shows as a card with its source (the channel's logo, where, who, when) and the message, instead of the header the router reads.
+- `apps/web/src/components/chat/TimelineUserMessageRow.tsx` and `QueuedRunsControl.tsx`: a channel message or a worker's request the server wrote shows as a card with its source (the channel's logo, or the asking worker linked to its thread; who and when) and the message, instead of the header the router reads, sent or queued.
 - `apps/web/src/components/sidebar/SidebarDraftBlock.tsx`: proposal chats are listed under Proposals, not as drafts.
 - `apps/web/src/components/Icons.tsx`: the Slack logo, added at the end.
 - `packages/client-runtime/src/operations/commands.ts` and `packages/client-runtime/src/state/threadCommands.ts`: a command to set a thread tag, which router setup uses.

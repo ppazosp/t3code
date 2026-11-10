@@ -1,6 +1,12 @@
 import { assert, describe, it } from "@effect/vitest";
 
-import { readChannelHeader, readProposalSource, withProposalSource } from "@t3tools/contracts";
+import {
+  readChannelHeader,
+  readProposalSource,
+  readWorkerRequest,
+  withProposalSource,
+  workerRequestText,
+} from "@t3tools/contracts";
 
 import {
   acceptedTags,
@@ -8,13 +14,11 @@ import {
   currentRunMessages,
   isUsersRequest,
   isWorkerThread,
-  readWorkerRequest,
   routedText,
   routeRefusal,
   resolveModelOptions,
   sourceOf,
   workerModelSelection,
-  workerRequestText,
   workerSource,
 } from "./Proposals.ts";
 import { DEFAULT_CONFIG } from "./SuperT3Home.ts";

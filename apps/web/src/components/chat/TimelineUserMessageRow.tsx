@@ -5,6 +5,7 @@ import {
   type EnvironmentId,
   type MessageId,
   readChannelHeader,
+  readWorkerRequest,
   type ScheduledTaskId,
   type ServerProviderSkill,
   ThreadId,
@@ -27,7 +28,7 @@ import {
   isVideoAttachment,
 } from "../../types";
 import ChatMarkdown from "../ChatMarkdown";
-import { ChannelMessageRow } from "../router/ChannelMessageRow";
+import { ChannelMessageRow, WorkerRequestRow } from "../router/ChannelMessageRow";
 import {
   CalendarClockIcon,
   ChevronDownIcon,
@@ -268,6 +269,17 @@ function UserMessageContent({ row }: { row: Extract<TimelineRow, { kind: "messag
   const channel =
     row.message.creationSource === "server" ? readChannelHeader(row.message.text) : null;
   if (channel !== null) return <ChannelMessageRow header={channel} at={row.message.createdAt} />;
+  const workerRequest =
+    row.message.creationSource === "server" ? readWorkerRequest(row.message.text) : null;
+  if (workerRequest !== null) {
+    return (
+      <WorkerRequestRow
+        environmentId={ctx.activeThreadEnvironmentId}
+        request={workerRequest}
+        at={row.message.createdAt}
+      />
+    );
+  }
   return ctx.workflowOpening?.messageId === row.message.id ? (
     <WorkflowOpeningBlock
       opening={ctx.workflowOpening}
