@@ -280,8 +280,10 @@ export function startMockSlack(options: { readonly port?: number } = {}): Promis
       // A file Slack serves to its bot token; anything else gets the sign-in page, as Slack does.
       if (url.pathname.startsWith("/_file/")) {
         if (request.headers.authorization === "Bearer xoxb-test" && url.pathname.endsWith(".png")) {
+          // In two chunks, so it goes out with no length, as a streamed download can.
           response.writeHead(200, { "content-type": "image/png" });
-          return response.end(Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+          response.write(Buffer.from([0x89, 0x50]));
+          return response.end(Buffer.from([0x4e, 0x47]));
         }
         return send(response, 200, "<html>Sign in</html>", "text/html");
       }

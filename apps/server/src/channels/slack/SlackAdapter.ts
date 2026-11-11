@@ -28,6 +28,7 @@ import {
   type SlackSettings,
 } from "./parse.ts";
 
+const isChannelError = Schema.is(ChannelError);
 const SlackOk = Schema.Struct({ ok: Schema.Boolean, error: Schema.optional(Schema.String) });
 const ConnectionsOpen = Schema.Struct({ url: Schema.String });
 const AuthTest = Schema.Struct({ user_id: Schema.String, bot_id: Schema.optional(Schema.String) });
@@ -362,38 +363,66 @@ export const make = Effect.fn("SlackAdapter.make")(function* (settings: SlackSet
       yield* reaction("reactions.add", "white_check_mark");
     }),
     read: readThread,
-    image: Effect.fn("SlackAdapter.image")(function* (image, limit) {
-      const refused = (why: string) =>
-        new ChannelError({ message: `Could not fetch ${image.name} from Slack: ${why}.` });
-      // The bot token goes only to Slack's own file host.
-      const url = URL.parse(image.source);
-      if (
-        url === null ||
-        (url.origin !== "https://files.slack.com" &&
-          url.origin !== URL.parse(settings.apiUrl)?.origin)
-      ) {
-        return yield* refused("it is not a Slack file");
-      }
-      const response = yield* http
-        .execute(
-          HttpClientRequest.get(url.href).pipe(
-            HttpClientRequest.setHeaders({ Authorization: `Bearer ${settings.botToken}` }),
+    image: Effect.fn("SlackAdapter.image")(
+      function* (image, limit) {
+        const refused = (why: string) =>
+          new ChannelError({ message: `Could not fetch ${image.name} from Slack: ${why}.` });
+        // The bot token goes only to Slack's own file host.
+        const url = URL.parse(image.source);
+        if (
+          url === null ||
+          (url.origin !== "https://files.slack.com" &&
+            url.origin !== URL.parse(settings.apiUrl)?.origin)
+        ) {
+          return yield* refused("it is not a Slack file");
+        }
+        const response = yield* http
+          .execute(
+            HttpClientRequest.get(url.href).pipe(
+              HttpClientRequest.setHeaders({ Authorization: `Bearer ${settings.botToken}` }),
+            ),
+          )
+          .pipe(Effect.mapError(() => refused("the request failed")));
+        // Without the files:read scope Slack answers with its sign-in page instead of the file.
+        const type = response.headers["content-type"] ?? "";
+        if (response.status !== 200 || !type.startsWith("image/")) {
+          return yield* refused("Slack sent no image; the app may lack the files:read scope");
+        }
+        if (Number(response.headers["content-length"] ?? 0) > limit) {
+          return yield* refused("it is too large");
+        }
+        // Counted as it streams, so a body with no length cannot fill memory before the check.
+        const chunks: Array<Uint8Array> = [];
+        let total = 0;
+        yield* Stream.runForEach(response.stream, (chunk) => {
+          total += chunk.byteLength;
+          if (total > limit) return Effect.fail(refused("it is too large"));
+          chunks.push(chunk);
+          return Effect.void;
+        }).pipe(
+          Effect.mapError((error) =>
+            isChannelError(error) ? error : refused("the download failed"),
           ),
-        )
-        .pipe(Effect.mapError(() => refused("the request failed")));
-      // Without the files:read scope Slack answers with its sign-in page instead of the file.
-      const type = response.headers["content-type"] ?? "";
-      if (response.status !== 200 || !type.startsWith("image/")) {
-        return yield* refused("Slack sent no image; the app may lack the files:read scope");
-      }
-      const size = Number(response.headers["content-length"] ?? Number.NaN);
-      if (size > limit) return yield* refused("it is too large");
-      const bytes = new Uint8Array(
-        yield* response.arrayBuffer.pipe(Effect.mapError(() => refused("the download failed"))),
-      );
-      if (bytes.byteLength > limit) return yield* refused("it is too large");
-      return bytes;
-    }),
+        );
+        const bytes = new Uint8Array(total);
+        let offset = 0;
+        for (const chunk of chunks) {
+          bytes.set(chunk, offset);
+          offset += chunk.byteLength;
+        }
+        return bytes;
+      },
+      (download, image) =>
+        Effect.timeoutOrElse(download, {
+          duration: "60 seconds",
+          orElse: () =>
+            Effect.fail(
+              new ChannelError({
+                message: `Could not fetch ${image.name} from Slack: it took too long.`,
+              }),
+            ),
+        }),
+    ),
     status: Effect.fn("SlackAdapter.status")(function* (ref, status) {
       const target = yield* refOf(ref);
       // Only DM threads are agent sessions; a channel thread has no session status.
