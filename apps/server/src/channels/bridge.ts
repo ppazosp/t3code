@@ -97,6 +97,15 @@ export function taskMessageText(input: {
   return parts.join("\n\n");
 }
 
+/**
+ * A run T3 started itself to tell a task its pull request changed. Its final message is for the
+ * task, not the people in its conversation: the task posts with channel_say when it has news.
+ */
+export function isPullRequestWake(run: { readonly userMessageId: string }): boolean {
+  // The id the pull request watch gives the message it wakes a thread with.
+  return run.userMessageId.startsWith("message:pr-watch:");
+}
+
 /** What a worker posts when its run ends: its last message, or how it ended without one. */
 export function resultText(
   outcome: "completed" | "failed" | "interrupted",

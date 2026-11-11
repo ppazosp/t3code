@@ -34,7 +34,8 @@ const runEvent = (
   status: string,
   runId = "run:1",
   threadId = "task",
-) => ({ type, threadId, runId, payload: { id: runId, threadId, status } }) as never;
+  userMessageId = `message:${runId}`,
+) => ({ type, threadId, runId, payload: { id: runId, threadId, status, userMessageId } }) as never;
 
 const itemEvent = (payload: Record<string, unknown>, runId = "run:1", threadId = "task") =>
   ({ type: "turn-item.updated", threadId, runId, payload }) as never;
@@ -139,7 +140,7 @@ function runBridge(input: {
 const task = thread("task", { tags: [ORIGIN] });
 
 describe("ChannelBridge", () => {
-  it.effect("posts each run's answer where the task came from, with no message of its own", () =>
+  it.effect("posts each answer where the task came from, but not a pull request wake's", () =>
     Effect.gen(function* () {
       const { posts, statuses } = yield* runBridge({
         events: [
@@ -152,6 +153,10 @@ describe("ChannelBridge", () => {
           runEvent("run.updated", "completed"),
           runEvent("run.created", "running", "run:2"),
           runEvent("run.updated", "interrupted", "run:2"),
+          // T3 woke the task about its pull request: what it concludes is for itself.
+          runEvent("run.created", "running", "run:3", "task", "message:pr-watch:abc"),
+          itemEvent({ type: "assistant_message", text: "CI passed.", streaming: false }, "run:3"),
+          runEvent("run.updated", "completed", "run:3", "task", "message:pr-watch:abc"),
         ],
       });
       assert.deepStrictEqual(
@@ -159,6 +164,8 @@ describe("ChannelBridge", () => {
         ["Done: **CSV** works.", "Stopped."],
       );
       assert.deepStrictEqual(statuses, [
+        [ORIGIN, "working"],
+        [ORIGIN, "idle"],
         [ORIGIN, "working"],
         [ORIGIN, "idle"],
         [ORIGIN, "working"],

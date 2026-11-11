@@ -28,7 +28,7 @@ const ChannelReplyTool = Tool.make("channel_reply", {
 
 const ChannelSayTool = Tool.make("channel_say", {
   description:
-    "Workers only. Post in the channel conversation your task came from, such as a Slack thread, before you finish: a question you need answered, or a short note. Markdown, at most 3000 characters. To show something, attach images or videos from your working folder in `files`, such as a screenshot or a screen recording; each channel has its own size limit. Your final message is posted there by itself when you finish, so do not repeat it.",
+    "Workers only. Post in the channel conversation your task came from, such as a Slack thread: a question you need answered, or work that is done when no answer of yours is posted, as after a pull request update. Never progress. Markdown, at most 3000 characters. To show something, attach images or videos from your working folder in `files`, such as a screenshot or a screen recording; each channel has its own size limit. When you answer the user, your final message is posted there by itself, so do not repeat it.",
   parameters: Schema.Struct({
     text: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(3000)),
     files: Schema.optional(

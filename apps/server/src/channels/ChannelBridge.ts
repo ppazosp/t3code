@@ -14,6 +14,7 @@ import type * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import type * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import type { ChannelAdapter, ChannelError, ChannelEvent, ChannelMessage } from "./Channel.ts";
 import {
+  isPullRequestWake,
   isRouter,
   isStop,
   reportTarget,
@@ -414,7 +415,8 @@ export const run = Effect.fn("ChannelBridge.run")(function* (input: {
     if (outcome === "completed" && childrenRunning(runRecord.threadId)) return;
     // A plan is what a planning run ends with; it goes out like any answer, for the user to answer.
     const text = resultText(outcome, report.plan ?? report.result);
-    if (text !== null) yield* report.adapter.post(report.ref, { text });
+    const quiet = outcome === "completed" && isPullRequestWake(runRecord);
+    if (text !== null && !quiet) yield* report.adapter.post(report.ref, { text });
     const waitsForUser =
       outcome === "completed" && known.get(runRecord.threadId)?.interactionMode === "plan";
     yield* setStatus(report.adapter, report.ref, waitsForUser ? "waiting" : "idle");
