@@ -18,6 +18,7 @@ const thread = (id: string, fields: Partial<BridgeThread> = {}): BridgeThread =>
   tags: [],
   interactionMode: "default",
   archived: false,
+  parentId: null,
   ...fields,
 });
 const reply = {
@@ -40,6 +41,7 @@ describe("bridge", () => {
     assert.strictEqual(reportTarget(thread("t", { tags: [ORIGIN] }), ["slack:"]), ORIGIN);
     assert.isNull(reportTarget(thread("t", { tags: [ORIGIN], archived: true }), ["slack:"]));
     assert.isNull(reportTarget(thread("t", { tags: ["router", ORIGIN] }), ["slack:"]));
+    assert.isNull(reportTarget(thread("t", { tags: [ORIGIN], parentId: "p" }), ["slack:"]));
     assert.isNull(reportTarget(thread("t"), ["slack:"]));
   });
 

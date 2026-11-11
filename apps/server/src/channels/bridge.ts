@@ -10,6 +10,8 @@ export interface BridgeThread {
   readonly tags: ReadonlyArray<string>;
   readonly interactionMode: "default" | "plan";
   readonly archived: boolean;
+  /** The thread a delegate_task child works for; null for any other thread. */
+  readonly parentId: string | null;
 }
 
 /**
@@ -25,14 +27,21 @@ export function originOf(
 
 export const isRouter = (thread: Pick<BridgeThread, "tags">) => thread.tags.includes(ROUTER_TAG);
 
-/** The live tasks that came from the conversation `ref` names: that conversation is theirs. */
+/**
+ * The live tasks that came from the conversation `ref` names: that conversation is theirs. A
+ * delegate_task child carries its parent's tags but is not one: its parent answers for it.
+ */
 export function tasksFrom(
   ref: string,
   threads: Iterable<BridgeThread>,
   prefixes: ReadonlyArray<string>,
 ): ReadonlyArray<BridgeThread> {
   return [...threads].filter(
-    (thread) => !thread.archived && !isRouter(thread) && originOf(thread, prefixes) === ref,
+    (thread) =>
+      !thread.archived &&
+      thread.parentId === null &&
+      !isRouter(thread) &&
+      originOf(thread, prefixes) === ref,
   );
 }
 
@@ -43,10 +52,11 @@ export function isStop(message: ChannelMessage): boolean {
 
 /**
  * Where a worker posts: the conversation its proposal came from. The user accepted the work, so it
- * posts there whoever wrote the message; the router answers in channels itself.
+ * posts there whoever wrote the message; the router answers in channels itself, and a
+ * delegate_task child reports only to its parent.
  */
 export function reportTarget(thread: BridgeThread, prefixes: ReadonlyArray<string>): string | null {
-  if (thread.archived || isRouter(thread)) return null;
+  if (thread.archived || thread.parentId !== null || isRouter(thread)) return null;
   return originOf(thread, prefixes);
 }
 
@@ -85,11 +95,6 @@ export function taskMessageText(input: {
     );
   }
   return parts.join("\n\n");
-}
-
-/** What a worker posts once when it starts on a conversation. */
-export function startText(title: string): string {
-  return `🛠️ **${title}**\nI'm working on it. I'll post the result here, or ask if I need something. Tag me to add anything.`;
 }
 
 /** What a worker posts when its run ends: its last message, or how it ended without one. */

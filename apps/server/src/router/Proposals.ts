@@ -32,7 +32,6 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/sql/SqlClient";
 
-import { startText } from "../channels/bridge.ts";
 import * as Channels from "../channels/Channels.ts";
 import { CHANNELS } from "../channels/registry.ts";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
@@ -703,14 +702,6 @@ export const layer = Layer.effect(
               })
               .pipe(Effect.mapError(failed("Could not move the thread to that conversation.")));
           }
-          // The thread has run before, so the bridge would not say it started there.
-          yield* channels
-            .say(input.threadId, startText(shell.title), [])
-            .pipe(
-              Effect.catchCause((cause) =>
-                Effect.logWarning("Could not say a routed thread took the work", { cause }),
-              ),
-            );
           yield* channels
             .proposed(origin)
             .pipe(

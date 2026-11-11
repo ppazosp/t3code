@@ -21,17 +21,22 @@ const thread = (id: string, fields: Record<string, unknown> = {}) => ({
   interactionMode: "default",
   archivedAt: null,
   deletedAt: null,
+  lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: id },
   ...fields,
 });
 
 const threadEvent = (fields: Record<string, unknown>) =>
   ({ type: "thread.tags-updated", threadId: "task", payload: thread("task", fields) }) as never;
 
-const runEvent = (type: "run.created" | "run.updated", status: string, runId = "run:1") =>
-  ({ type, threadId: "task", runId, payload: { id: runId, threadId: "task", status } }) as never;
+const runEvent = (
+  type: "run.created" | "run.updated",
+  status: string,
+  runId = "run:1",
+  threadId = "task",
+) => ({ type, threadId, runId, payload: { id: runId, threadId, status } }) as never;
 
-const itemEvent = (payload: Record<string, unknown>, runId = "run:1") =>
-  ({ type: "turn-item.updated", threadId: "task", runId, payload }) as never;
+const itemEvent = (payload: Record<string, unknown>, runId = "run:1", threadId = "task") =>
+  ({ type: "turn-item.updated", threadId, runId, payload }) as never;
 
 const message = (id: string, fields: Partial<ChannelMessage> = {}): ChannelEvent => ({
   type: "message",
@@ -60,8 +65,6 @@ function runBridge(input: {
   readonly existing?: ReadonlyArray<ReturnType<typeof thread>>;
   readonly history?: ReadonlyArray<ChannelHistoryEntry>;
   readonly state?: ChannelBridge.BridgeState;
-  /** How many runs T3 has for the task. */
-  readonly runs?: number;
 }) {
   const posts: Array<{ ref: string; text: string }> = [];
   const sent: Array<{ threadId: string; text: string }> = [];
@@ -95,8 +98,6 @@ function runBridge(input: {
       }),
     dispatch: (command: Record<string, unknown>) =>
       Effect.sync(() => void dispatched.push(command)),
-    getThreadProjection: () =>
-      Effect.succeed({ runs: Array.from({ length: input.runs ?? 1 }, (_, index) => ({ index })) }),
   } as never;
   const engine = { streamDomainEvents: Stream.fromIterable(input.events ?? []) } as never;
   const state = input.state ?? ChannelBridge.makeState();
@@ -108,7 +109,7 @@ function runBridge(input: {
 const task = thread("task", { tags: [ORIGIN] });
 
 describe("ChannelBridge", () => {
-  it.effect("says once that a task started, then posts each run's answer where it came from", () =>
+  it.effect("posts each run's answer where the task came from, with no message of its own", () =>
     Effect.gen(function* () {
       const { posts, statuses } = yield* runBridge({
         events: [
@@ -125,11 +126,7 @@ describe("ChannelBridge", () => {
       });
       assert.deepStrictEqual(
         posts.map((post) => post.text),
-        [
-          "🛠️ **Add CSV export**\nI'm working on it. I'll post the result here, or ask if I need something. Tag me to add anything.",
-          "Done: **CSV** works.",
-          "Stopped.",
-        ],
+        ["Done: **CSV** works.", "Stopped."],
       );
       assert.deepStrictEqual(statuses, [
         [ORIGIN, "working"],
@@ -140,21 +137,42 @@ describe("ChannelBridge", () => {
     }),
   );
 
-  it.effect("does not say again that a task started when it already ran, as after a restart", () =>
+  it.effect("leaves a task's delegate_task children to it, and posts once they finish", () =>
     Effect.gen(function* () {
-      const { posts } = yield* runBridge({
-        existing: [task],
-        runs: 3,
+      const child = thread("child", {
+        tags: [ORIGIN],
+        lineage: { parentThreadId: "task", relationshipToParent: "subagent", rootThreadId: "task" },
+      });
+      const { posts, sent, statuses } = yield* runBridge({
+        existing: [thread("router", { tags: ["router"] }), task, child],
+        channel: [message("m1", { text: "use my browser" })],
         events: [
           runEvent("run.created", "running"),
-          itemEvent({ type: "assistant_message", text: "Fixed it.", streaming: false }),
+          runEvent("run.created", "running", "run:c", "child"),
+          itemEvent({ type: "assistant_message", text: "Started a child.", streaming: false }),
           runEvent("run.updated", "completed"),
+          itemEvent({ type: "assistant_message", text: "Child result", streaming: false }, "run:c"),
+          runEvent("run.updated", "completed", "run:c", "child"),
+          runEvent("run.created", "running", "run:2"),
+          itemEvent({ type: "assistant_message", text: "All done.", streaming: false }, "run:2"),
+          runEvent("run.updated", "completed", "run:2"),
         ],
       });
+      // The user's tag reaches the task, not the router, though its child carries the same origin.
+      assert.deepStrictEqual(
+        sent.map((call) => call.threadId),
+        ["task"],
+      );
       assert.deepStrictEqual(
         posts.map((post) => post.text),
-        ["Fixed it."],
+        ["All done."],
       );
+      // Still working while the child runs; idle only after the task's own answer.
+      assert.deepStrictEqual(statuses, [
+        [ORIGIN, "working"],
+        [ORIGIN, "working"],
+        [ORIGIN, "idle"],
+      ]);
     }),
   );
 

@@ -1,7 +1,6 @@
 import {
   CommandId,
   MessageId,
-  ThreadId,
   type OrchestrationV2AppThread,
   type OrchestrationV2DomainEvent,
   type OrchestrationV2Run,
@@ -19,7 +18,6 @@ import {
   reportTarget,
   resultText,
   routerMessageText,
-  startText,
   taskMessageText,
   tasksFrom,
   type BridgeThread,
@@ -59,7 +57,14 @@ const isThreadEvent = (event: OrchestrationV2DomainEvent): event is ThreadEvent 
 export const toBridgeThread = (
   thread: Pick<
     OrchestrationV2ThreadShell,
-    "id" | "projectId" | "title" | "tags" | "interactionMode" | "archivedAt" | "deletedAt"
+    | "id"
+    | "projectId"
+    | "title"
+    | "tags"
+    | "interactionMode"
+    | "archivedAt"
+    | "deletedAt"
+    | "lineage"
   >,
 ): BridgeThread => ({
   id: thread.id,
@@ -68,6 +73,8 @@ export const toBridgeThread = (
   tags: thread.tags ?? [],
   interactionMode: thread.interactionMode,
   archived: thread.archivedAt !== null || thread.deletedAt !== null,
+  parentId:
+    thread.lineage.relationshipToParent === "subagent" ? thread.lineage.parentThreadId : null,
 });
 
 /** What the bridge and the channel tools share. */
@@ -137,8 +144,8 @@ interface RunReport {
 /**
  * Connects channels to T3. A conversation a task came from is that task's: only the user's tag
  * reaches it there, carrying everything said since the last tag; nothing in it goes to the router.
- * Every other message goes to the router. Back in the channel, a task says once that it started,
- * then posts each run's answer, plan or question.
+ * Every other message goes to the router. Back in the channel, a task posts each run's answer, plan
+ * or question; a run that ends to wait for the task's children posts nothing.
  */
 export const run = Effect.fn("ChannelBridge.run")(function* (input: {
   readonly adapters: ReadonlyArray<ChannelAdapter>;
@@ -160,8 +167,7 @@ export const run = Effect.fn("ChannelBridge.run")(function* (input: {
   const reports = new Map<string, RunReport>();
   // The run each thread is on, so a worker tagged after its run started is still reported.
   const activeRuns = new Map<string, string>();
-  // Tasks already followed, and the message each task last read up to in its conversation.
-  const started = new Set<string>();
+  // The message each task last read up to in its conversation.
   const lastRead = new Map<string, string>();
 
   const mark = (adapter: ChannelAdapter, messageId: string, value: "seen" | "done") =>
@@ -329,18 +335,13 @@ export const run = Effect.fn("ChannelBridge.run")(function* (input: {
     const adapter = ref === null ? undefined : adapterFor(ref);
     if (ref === null || adapter === undefined) return;
     reports.set(runId, { adapter, ref, threadId: thread.id, result: null, plan: null });
+    // The task says in its own words that it started, if it will take a while.
     yield* setStatus(adapter, ref, "working");
-    if (started.has(thread.id)) return;
-    started.add(thread.id);
-    if (started.size > LIMIT) started.delete(started.values().next().value!);
-    // Only a task's first run says it started; T3 keeps the runs, so a restart does not repeat it.
-    const runs = yield* threads.getThreadProjection(ThreadId.make(thread.id)).pipe(
-      Effect.map((projection) => projection.runs.length),
-      Effect.orElseSucceed(() => 1),
-    );
-    if (runs > 1) return;
-    yield* adapter.post(ref, { text: startText(thread.title) });
   });
+
+  /** A task's delegate_task children still running: their completion wakes it to report. */
+  const childrenRunning = (threadId: string) =>
+    [...known.values()].some((thread) => thread.parentId === threadId && activeRuns.has(thread.id));
 
   const onRun = Effect.fn("ChannelBridge.onRun")(function* (runRecord: OrchestrationV2Run) {
     const report = reports.get(runRecord.id);
@@ -360,6 +361,8 @@ export const run = Effect.fn("ChannelBridge.run")(function* (input: {
     if (outcome === undefined) return;
     reports.delete(runRecord.id);
     activeRuns.delete(runRecord.threadId);
+    // A turn that ends to wait for its children is not an answer: it reports once they finish.
+    if (outcome === "completed" && childrenRunning(runRecord.threadId)) return;
     // A plan is what a planning run ends with; it goes out like any answer, for the user to answer.
     const text = resultText(outcome, report.plan ?? report.result);
     if (text !== null) yield* report.adapter.post(report.ref, { text });
