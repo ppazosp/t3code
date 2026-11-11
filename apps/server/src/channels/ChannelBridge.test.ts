@@ -174,6 +174,45 @@ describe("ChannelBridge", () => {
     }),
   );
 
+  it.effect("tells a task once when a pull request it watched merges, and no other", () =>
+    Effect.gen(function* () {
+      const link = (number: number, state: string, watched: boolean) => ({
+        url: `https://github.com/o/r/pull/${number}`,
+        number,
+        snapshot: { state },
+        ...(watched ? { watch: { startedAt: "2026-11-11T10:00:00.000Z" } } : {}),
+      });
+      const linkEvent = (threadId: string, payload: ReturnType<typeof link>) =>
+        ({ type: "thread.pull-request-link-updated", threadId, payload }) as never;
+      const { sent } = yield* runBridge({
+        existing: [
+          thread("router", { tags: ["router"] }),
+          // Watching #1 and #2; #3 merged before this start; #4 never watched.
+          thread("task", {
+            tags: [ORIGIN],
+            pullRequests: [link(1, "open", true), link(2, "open", true), link(3, "merged", true)],
+          }),
+          thread("mine", { pullRequests: [link(5, "open", true)] }),
+        ],
+        events: [
+          // T3 ends the watch as it sees the merge, then the snapshot catches up.
+          linkEvent("task", link(1, "open", false)),
+          linkEvent("task", link(1, "merged", false)),
+          linkEvent("task", link(1, "merged", false)),
+          linkEvent("task", link(3, "merged", false)),
+          linkEvent("task", link(4, "merged", false)),
+          // A thread with no conversation to close.
+          linkEvent("mine", link(5, "merged", false)),
+        ],
+      });
+      assert.deepStrictEqual(
+        sent.map((call) => call.threadId),
+        ["task"],
+      );
+      assert.include(sent[0]!.text, "Your pull request #1 (https://github.com/o/r/pull/1) merged.");
+    }),
+  );
+
   it.effect("leaves a task's delegate_task children to it, and posts once they finish", () =>
     Effect.gen(function* () {
       const child = thread("child", {

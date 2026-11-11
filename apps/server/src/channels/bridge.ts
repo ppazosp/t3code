@@ -106,6 +106,14 @@ export function isPullRequestWake(run: { readonly userMessageId: string }): bool
   return run.userMessageId.startsWith("message:pr-watch:");
 }
 
+/** What a task hears when a pull request it watched merges: its answer is posted as the close. */
+export function mergedText(
+  channel: string,
+  pullRequest: { readonly number: number; readonly url: string },
+): string {
+  return `Your pull request #${pullRequest.number} (${pullRequest.url}) merged. Your final message is posted in your ${channelLabel(channel)} thread: say in a line or two that it is done, and anything left for the user, such as a deploy to check.`;
+}
+
 /** What a worker posts when its run ends: its last message, or how it ended without one. */
 export function resultText(
   outcome: "completed" | "failed" | "interrupted",

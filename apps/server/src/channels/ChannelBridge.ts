@@ -6,6 +6,7 @@ import {
   type OrchestrationV2DomainEvent,
   type OrchestrationV2Run,
   type OrchestrationV2ThreadShell,
+  type ThreadPullRequestLink,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
@@ -16,6 +17,7 @@ import type { ChannelAdapter, ChannelError, ChannelEvent, ChannelMessage } from 
 import {
   isPullRequestWake,
   isRouter,
+  mergedText,
   isStop,
   reportTarget,
   resultText,
@@ -107,6 +109,11 @@ const remember = <K, V>(map: Map<K, V>, key: K, value: V) => {
   if (map.size > LIMIT) map.delete(map.keys().next().value!);
 };
 
+const rememberKey = (set: Set<string>, key: string) => {
+  set.add(key);
+  if (set.size > LIMIT) set.delete(set.values().next().value!);
+};
+
 /** Marks the user's waiting requests in a conversation as handled, once something answered them. */
 export const markHandled = Effect.fn("ChannelBridge.markHandled")(function* (
   state: BridgeState,
@@ -172,11 +179,29 @@ export const run = Effect.fn("ChannelBridge.run")(function* (input: {
   const adapterFor = (ref: string) => adapters.find((adapter) => ref.startsWith(adapter.prefix));
 
   const known = new Map<string, BridgeThread>();
+  // Pull requests a task watched, and the merges it was told about, by thread and pull request.
+  const watched = new Set<string>();
+  const toldMerged = new Set<string>();
+  const pullRequestKey = (threadId: string, link: ThreadPullRequestLink) =>
+    `${threadId} ${link.url}`;
+  /** Records what a link says; true when a pull request the task watched just merged. */
+  const mergedNow = (threadId: string, link: ThreadPullRequestLink) => {
+    const key = pullRequestKey(threadId, link);
+    if (link.watch !== undefined) rememberKey(watched, key);
+    if (link.snapshot?.state !== "merged" || toldMerged.has(key) || !watched.has(key)) {
+      return false;
+    }
+    rememberKey(toldMerged, key);
+    return true;
+  };
+
   for (const shell of yield* threads
     .listProjectThreads({ includeSubagents: false })
     .pipe(Effect.orElseSucceed(() => []))) {
     const thread = toBridgeThread(shell);
     known.set(thread.id, thread);
+    // A merge from before this start is old news.
+    for (const link of shell.pullRequests ?? []) mergedNow(thread.id, link);
   }
   const reports = new Map<string, RunReport>();
   // The run each thread is on, so a worker tagged after its run started is still reported.
@@ -393,6 +418,33 @@ export const run = Effect.fn("ChannelBridge.run")(function* (input: {
   const childrenRunning = (threadId: string) =>
     [...known.values()].some((thread) => thread.parentId === threadId && activeRuns.has(thread.id));
 
+  /**
+   * A pull request a task watched merged. T3 ends the watch without waking the task, so the
+   * bridge tells it, and its answer closes the work in its conversation.
+   */
+  const onPullRequest = Effect.fn("ChannelBridge.onPullRequest")(function* (
+    threadId: string,
+    link: ThreadPullRequestLink,
+  ) {
+    if (!mergedNow(threadId, link)) return;
+    const thread = known.get(threadId);
+    const ref = thread === undefined ? null : reportTarget(thread, prefixes);
+    const adapter = ref === null ? undefined : adapterFor(ref);
+    if (thread === undefined || adapter === undefined) return;
+    const id = `channel-merged:${pullRequestKey(threadId, link)}`;
+    yield* threads.sendToThread({
+      projectId: thread.projectId as OrchestrationV2ThreadShell["projectId"],
+      commandId: CommandId.make(id),
+      threadId: thread.id as OrchestrationV2ThreadShell["id"],
+      messageId: MessageId.make(id),
+      text: mergedText(adapter.name, link),
+      attachments: [],
+      mode: "auto",
+      createdBy: "system",
+      creationSource: "server",
+    });
+  });
+
   const onRun = Effect.fn("ChannelBridge.onRun")(function* (runRecord: OrchestrationV2Run) {
     const report = reports.get(runRecord.id);
     if (report === undefined) {
@@ -424,9 +476,13 @@ export const run = Effect.fn("ChannelBridge.run")(function* (input: {
 
   const onEvent = Effect.fn("ChannelBridge.onEvent")(
     function* (event: OrchestrationV2DomainEvent) {
+      if (event.type === "thread.pull-request-link-updated") {
+        return yield* onPullRequest(event.threadId, event.payload);
+      }
       if (isThreadEvent(event)) {
         const thread = toBridgeThread(event.payload);
         known.set(thread.id, thread);
+        for (const link of event.payload.pullRequests ?? []) yield* onPullRequest(thread.id, link);
         // An accepted proposal's worker is tagged with where it came from after its run started.
         const runId = activeRuns.get(thread.id);
         if (runId !== undefined && !reports.has(runId)) yield* startReport(thread, runId);
