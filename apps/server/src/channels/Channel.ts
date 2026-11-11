@@ -28,6 +28,16 @@ export interface ChannelMessage {
   readonly where: string;
   readonly author: string;
   readonly text: string;
+  /** Images posted with the message, which the adapter fetches with `image`. */
+  readonly images?: ReadonlyArray<ChannelImage> | undefined;
+}
+
+/** An image someone posted in a channel. */
+export interface ChannelImage {
+  readonly name: string;
+  readonly mimeType: string;
+  /** Where the adapter fetches it from, in the channel's own terms. */
+  readonly source: string;
 }
 
 export type ChannelEvent =
@@ -94,6 +104,8 @@ export interface ChannelAdapter {
     ref: string,
     status: "working" | "idle" | "waiting",
   ) => Effect.Effect<void, ChannelError>;
+  /** The bytes of an image posted with a message, refused over `limit` bytes. */
+  readonly image: (image: ChannelImage, limit: number) => Effect.Effect<Uint8Array, ChannelError>;
   /** The latest messages of the conversation `ref` names, oldest first: at most `limit`. */
   readonly read: (
     ref: string,

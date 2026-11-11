@@ -107,6 +107,21 @@ describe("SlackAdapter against a mock Slack", () => {
         );
         assert.strictEqual(slack.messages.at(-2)!.text, "Screenshot");
 
+        // Pasted images come down with the bot token, from Slack's file host only.
+        const image = (source: string) =>
+          adapter.image({ name: "shot.png", mimeType: "image/png", source }, 1024);
+        assert.deepStrictEqual(
+          [...(yield* image(`${slack.url}/_file/shot.png`))],
+          [0x89, 0x50, 0x4e, 0x47],
+        );
+        for (const source of [`${slack.url}/_file/signin`, "https://example.com/_file/shot.png"]) {
+          assert.isTrue((yield* Effect.flip(image(source)))._tag === "ChannelError");
+        }
+        assert.include(
+          (yield* Effect.flip(image("https://example.com/shot.png"))).message,
+          "not a Slack file",
+        );
+
         const history = yield* adapter.read(ref, 10);
         assert.deepStrictEqual(
           history.slice(0, 2).map((entry) => [entry.id, entry.author, entry.fromUser, entry.bot]),

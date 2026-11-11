@@ -1,4 +1,5 @@
 import {
+  type ChatAttachment,
   CommandId,
   MessageId,
   type OrchestrationV2AppThread,
@@ -11,7 +12,7 @@ import * as Stream from "effect/Stream";
 
 import type * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import type * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
-import type { ChannelAdapter, ChannelEvent, ChannelMessage } from "./Channel.ts";
+import type { ChannelAdapter, ChannelError, ChannelEvent, ChannelMessage } from "./Channel.ts";
 import {
   isRouter,
   isStop,
@@ -22,6 +23,7 @@ import {
   tasksFrom,
   type BridgeThread,
 } from "./bridge.ts";
+import { IMAGE_LIMIT, IMAGES_PER_MESSAGE, type ImageBytes } from "./images.ts";
 
 const ACTIVE_RUN = new Set<OrchestrationV2Run["status"]>([
   "preparing",
@@ -43,6 +45,11 @@ const OUTCOME: Partial<
 };
 
 const LIMIT = 500;
+
+const imageNote = (missed: number) =>
+  missed <= 0
+    ? ""
+    : `\n\n${missed === 1 ? "1 image" : `${missed} images`} posted with this message could not be read.`;
 
 /** How far back a tag reads its conversation. */
 const THREAD_READ_LIMIT = 100;
@@ -152,6 +159,12 @@ export const run = Effect.fn("ChannelBridge.run")(function* (input: {
   readonly threads: ThreadManagementService.ThreadManagementService["Service"];
   readonly engine: Orchestrator.OrchestratorV2["Service"];
   readonly state: BridgeState;
+  /** Stores a message's images as attachments of a message in a thread. */
+  readonly saveImages: (
+    threadId: string,
+    messageId: string,
+    images: ReadonlyArray<ImageBytes>,
+  ) => Effect.Effect<ReadonlyArray<ChatAttachment>, ChannelError>;
 }) {
   const { adapters, threads, engine, state } = input;
   const prefixes = adapters.map((adapter) => adapter.prefix);
@@ -194,6 +207,39 @@ export const run = Effect.fn("ChannelBridge.run")(function* (input: {
     yield* setStatus(adapter, ref, "idle");
   });
 
+  /**
+   * The images posted with a message, as attachments of a message in `threadId`, and a note for
+   * the thread when some could not be read.
+   */
+  const attach = Effect.fn("ChannelBridge.attach")(function* (
+    adapter: ChannelAdapter,
+    message: ChannelMessage,
+    threadId: string,
+  ) {
+    const posted = message.images ?? [];
+    const fetched = yield* Effect.forEach(
+      posted.slice(0, IMAGES_PER_MESSAGE),
+      (image) =>
+        adapter.image(image, IMAGE_LIMIT).pipe(
+          Effect.map((bytes) => [{ name: image.name, mimeType: image.mimeType, bytes }]),
+          Effect.catchCause((cause) =>
+            Effect.logWarning("Could not fetch a channel image", { cause }).pipe(Effect.as([])),
+          ),
+        ),
+      { concurrency: 2 },
+    );
+    const attachments = yield* input
+      .saveImages(threadId, message.id, fetched.flat())
+      .pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("Could not save channel images", { cause }).pipe(
+            Effect.as([] as ReadonlyArray<ChatAttachment>),
+          ),
+        ),
+      );
+    return { attachments, note: imageNote(posted.length - attachments.length) };
+  });
+
   /** The user's tag in a task's conversation, with everything said there since the last one. */
   const deliverToTask = Effect.fn("ChannelBridge.deliverToTask")(function* (
     adapter: ChannelAdapter,
@@ -226,18 +272,20 @@ export const run = Effect.fn("ChannelBridge.run")(function* (input: {
         interactionMode: "default",
       });
     }
+    const { attachments, note } = yield* attach(adapter, message, task.id);
     yield* threads.sendToThread({
       projectId: task.projectId as OrchestrationV2ThreadShell["projectId"],
       commandId: CommandId.make(message.id),
       threadId,
       messageId: MessageId.make(message.id),
-      text: taskMessageText({
-        channel: adapter.name,
-        text: message.text,
-        unread: since.length,
-        planning,
-      }),
-      attachments: [],
+      text:
+        taskMessageText({
+          channel: adapter.name,
+          text: message.text,
+          unread: since.length,
+          planning,
+        }) + note,
+      attachments,
       mode: "auto",
       createdBy: "user",
       creationSource: "server",
@@ -273,14 +321,15 @@ export const run = Effect.fn("ChannelBridge.run")(function* (input: {
         yield* mark(adapter, message.id, "seen");
         yield* setStatus(adapter, message.ref, "working");
       }
+      const { attachments, note } = yield* attach(adapter, message, router.id);
       yield* threads.sendToThread({
         projectId: router.projectId as OrchestrationV2ThreadShell["projectId"],
         // The message's own id, so a redelivered message is the same command.
         commandId: CommandId.make(message.id),
         threadId: router.id as OrchestrationV2ThreadShell["id"],
         messageId: MessageId.make(message.id),
-        text: routerMessageText(adapter.name, message),
-        attachments: [],
+        text: routerMessageText(adapter.name, message) + note,
+        attachments,
         mode: "auto",
         createdBy: message.fromUser ? "user" : "system",
         creationSource: "server",

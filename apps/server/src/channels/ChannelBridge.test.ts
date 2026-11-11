@@ -3,11 +3,12 @@ import type { OrchestrationV2DomainEvent } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
 
-import type {
-  ChannelAdapter,
-  ChannelEvent,
-  ChannelHistoryEntry,
-  ChannelMessage,
+import {
+  ChannelError,
+  type ChannelAdapter,
+  type ChannelEvent,
+  type ChannelHistoryEntry,
+  type ChannelMessage,
 } from "./Channel.ts";
 import * as ChannelBridge from "./ChannelBridge.ts";
 
@@ -65,9 +66,11 @@ function runBridge(input: {
   readonly existing?: ReadonlyArray<ReturnType<typeof thread>>;
   readonly history?: ReadonlyArray<ChannelHistoryEntry>;
   readonly state?: ChannelBridge.BridgeState;
+  /** The images the channel serves, by source; any other fails to fetch. */
+  readonly images?: Record<string, Uint8Array>;
 }) {
   const posts: Array<{ ref: string; text: string }> = [];
-  const sent: Array<{ threadId: string; text: string }> = [];
+  const sent: Array<{ threadId: string; text: string; attachments: ReadonlyArray<unknown> }> = [];
   const marks: Array<[string, string]> = [];
   const statuses: Array<[string, string]> = [];
   const dispatched: Array<Record<string, unknown>> = [];
@@ -85,12 +88,25 @@ function runBridge(input: {
     mark: (id, mark) => Effect.sync(() => void marks.push([id, mark])),
     status: (ref, status) => Effect.sync(() => void statuses.push([ref, status])),
     read: () => Effect.succeed(input.history ?? []),
+    image: (image) => {
+      const bytes = input.images?.[image.source];
+      return bytes === undefined
+        ? Effect.fail(new ChannelError({ message: "no such image" }))
+        : Effect.succeed(bytes);
+    },
   };
   const threads = {
     listProjectThreads: () =>
       Effect.succeed(input.existing ?? [thread("router", { tags: ["router"] })]),
-    sendToThread: (call: { threadId: string; text: string }) =>
-      Effect.sync(() => void sent.push({ threadId: call.threadId, text: call.text })),
+    sendToThread: (call: { threadId: string; text: string; attachments: ReadonlyArray<unknown> }) =>
+      Effect.sync(
+        () =>
+          void sent.push({
+            threadId: call.threadId,
+            text: call.text,
+            attachments: call.attachments,
+          }),
+      ),
     interruptThread: (call: { threadId: string }) =>
       Effect.sync(() => {
         stopped.push(call.threadId);
@@ -101,7 +117,21 @@ function runBridge(input: {
   } as never;
   const engine = { streamDomainEvents: Stream.fromIterable(input.events ?? []) } as never;
   const state = input.state ?? ChannelBridge.makeState();
-  return ChannelBridge.run({ adapters: [adapter], threads, engine, state }).pipe(
+  const saveImages = (
+    threadId: string,
+    _messageId: string,
+    images: ReadonlyArray<{ name: string; bytes: Uint8Array }>,
+  ) =>
+    Effect.succeed(
+      images.map((image) => ({
+        type: "image" as const,
+        id: `${threadId}-${image.name}`,
+        name: image.name,
+        mimeType: "image/png",
+        sizeBytes: image.bytes.byteLength,
+      })),
+    ) as never;
+  return ChannelBridge.run({ adapters: [adapter], threads, engine, state, saveImages }).pipe(
     Effect.as({ posts, sent, marks, statuses, dispatched, stopped, state }),
   );
 }
@@ -254,13 +284,19 @@ describe("ChannelBridge", () => {
     }),
   );
 
-  it.effect("sends messages outside a task's conversation to the router", () =>
+  it.effect("sends messages outside a task's conversation to the router, with their images", () =>
     Effect.gen(function* () {
       const elsewhere = "slack:C1:1700000000.000900";
+      const image = (name: string) => ({ name, mimeType: "image/png", source: `files/${name}` });
       const { sent, marks, statuses, state } = yield* runBridge({
         existing: [thread("router", { tags: ["router"] }), task],
+        images: { "files/shot.png": new Uint8Array([1, 2, 3]) },
         channel: [
-          message("m1", { ref: elsewhere, text: "what changed today?" }),
+          message("m1", {
+            ref: elsewhere,
+            text: "what changed today?",
+            images: [image("shot.png"), image("gone.png")],
+          }),
           message("m2", {
             ref: elsewhere,
             fromUser: false,
@@ -278,6 +314,18 @@ describe("ChannelBridge", () => {
         sent[0]!.text,
         /^\[slack #eng from you to me ref=slack:C1:1700000000\.000900\]/u,
       );
+      // The image that loaded goes with the message; the router hears about the one that did not.
+      assert.deepStrictEqual(sent[0]!.attachments, [
+        {
+          type: "image",
+          id: "router-shot.png",
+          name: "shot.png",
+          mimeType: "image/png",
+          sizeBytes: 3,
+        },
+      ]);
+      assert.match(sent[0]!.text, /1 image posted with this message could not be read\.$/u);
+      assert.deepStrictEqual(sent[1]!.attachments, []);
       assert.deepStrictEqual(marks, [["m1", "seen"]]);
       assert.deepStrictEqual(statuses, [[elsewhere, "working"]]);
       assert.deepStrictEqual(state.waiting.get(elsewhere), ["m1"]);

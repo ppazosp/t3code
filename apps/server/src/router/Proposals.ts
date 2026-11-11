@@ -21,7 +21,8 @@ import {
   type ScheduledTask,
   type ScheduledTaskId,
   type ServerProvider,
-  type ThreadId,
+  ThreadId,
+  type ChatAttachment,
   type ThreadTag,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
@@ -30,6 +31,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import * as Channels from "../channels/Channels.ts";
@@ -375,6 +377,23 @@ export const layer = Layer.effect(
     const providerRegistry = yield* ProviderRegistry;
     const home = yield* SuperT3Home;
     const failed = (message: string) => () => new ProposalError({ message });
+    /** Copies the images a routed message came with to the thread it goes to; none if that fails. */
+    const passImages = (
+      threadId: ThreadId,
+      messageId: string,
+      images: ReadonlyArray<ChatAttachment>,
+    ) =>
+      images.length === 0
+        ? Effect.succeed([] as ReadonlyArray<ChatAttachment>)
+        : channels
+            .copyImages(threadId, messageId, images)
+            .pipe(
+              Effect.catchCause((cause) =>
+                Effect.logWarning("Could not pass a message's images on", { cause }).pipe(
+                  Effect.as([] as ReadonlyArray<ChatAttachment>),
+                ),
+              ),
+            );
 
     // super-t3's own table; upstream migrations never see it.
     yield* sql`CREATE TABLE IF NOT EXISTS super_t3_proposal_origins (
@@ -485,14 +504,16 @@ export const layer = Layer.effect(
     const triggerOf = Effect.fn("Proposals.triggerOf")(function* (routerId: ThreadId) {
       // Typed text cannot fake where it came from: only the server writes channel messages.
       const trigger = (yield* currentMessages(routerId)).at(-1);
+      const images = trigger?.attachments ?? [];
       if (trigger?.creationSource !== "server") {
-        return { origin: null, fromUser: false, source: null };
+        return { origin: null, fromUser: false, source: null, images };
       }
       const header = readChannelHeader(trigger.text);
       return {
         origin: header?.ref ?? null,
         fromUser: header !== null && isUsersOwn(header),
         source: yield* serverSourceOf(trigger.text, DateTime.formatIso(trigger.createdAt)),
+        images,
       };
     });
 
@@ -523,6 +544,7 @@ export const layer = Layer.effect(
             origin: null,
             fromUser: false,
             source: yield* serverSourceOf(latest.text, DateTime.formatIso(latest.createdAt)),
+            images: [],
           };
         }
         if (latest === undefined || latest.creationSource === "server") {
@@ -530,7 +552,7 @@ export const layer = Layer.effect(
             message: "Give the ref from the header of the channel message you are routing.",
           });
         }
-        return { origin: null, fromUser: true, source: null };
+        return { origin: null, fromUser: true, source: null, images: latest.attachments ?? [] };
       }
       const message = userMessages.findLast(
         (candidate) =>
@@ -546,6 +568,7 @@ export const layer = Layer.effect(
         origin: header.ref,
         fromUser: isUsersOwn(header),
         source: sourceOf(message.text, DateTime.formatIso(message.createdAt)),
+        images: message.attachments ?? [],
       };
     });
 
@@ -625,7 +648,7 @@ export const layer = Layer.effect(
                 note: "Proposed instead: a worker starts at once only for what the user asked you themselves.",
               };
         }
-        const { origin, fromUser } = yield* triggerOf(input.routerId);
+        const { origin, fromUser, images } = yield* triggerOf(input.routerId);
         const where = yield* newWorker(input);
         // Unique per call: the router can dispatch several workers in the same millisecond.
         dispatched += 1;
@@ -637,9 +660,15 @@ export const layer = Layer.effect(
           continuing: false,
           channels: CHANNELS.map((channel) => channel.name),
         });
+        // The worker gets the images its request came with; it owns copies, so it needs its id now.
+        const threadId =
+          images.length === 0 ? undefined : ThreadId.make(SecureRandom.uuidV4Unsafe());
+        const attachments =
+          threadId === undefined ? [] : yield* passImages(threadId, `${key}:brief`, images);
         const launched = yield* threadLaunch
           .launch({
             commandId: CommandId.make(key),
+            ...(threadId === undefined ? {} : { threadId }),
             projectId: where.projectId,
             title: input.title,
             modelSelection: where.modelSelection,
@@ -650,7 +679,7 @@ export const layer = Layer.effect(
             initialMessage: {
               messageId: MessageId.make(`${key}:brief`),
               text: briefWithRelated(input.brief, where.related),
-              attachments: [],
+              attachments,
             },
             createdBy: "agent",
             creationSource: "server",
@@ -674,7 +703,10 @@ export const layer = Layer.effect(
         if (shell === null || shell.deletedAt !== null) {
           return yield* new ProposalError({ message: `There is no thread ${input.threadId}.` });
         }
-        const { origin, fromUser, source } = yield* routedMessage(input.routerId, input.ref);
+        const { origin, fromUser, source, images } = yield* routedMessage(
+          input.routerId,
+          input.ref,
+        );
         const refusal = routeRefusal(shell, fromUser);
         if (refusal !== null) return yield* new ProposalError({ message: refusal });
         const now = DateTime.toEpochMillis(yield* DateTime.now);
@@ -710,6 +742,7 @@ export const layer = Layer.effect(
               ),
             );
         }
+        const attachments = yield* passImages(input.threadId, key, images);
         yield* threads
           .sendToThread({
             projectId: shell.projectId,
@@ -717,7 +750,7 @@ export const layer = Layer.effect(
             threadId: input.threadId,
             messageId: MessageId.make(key),
             text: routedText({ note: input.note, source, fromUser }),
-            attachments: [],
+            attachments,
             mode: "auto",
             createdBy: "agent",
             creationSource: "server",

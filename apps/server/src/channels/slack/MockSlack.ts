@@ -277,6 +277,14 @@ export function startMockSlack(options: { readonly port?: number } = {}): Promis
         upload.received = bytes.length;
         return send(response, 200, "OK", "text/plain");
       }
+      // A file Slack serves to its bot token; anything else gets the sign-in page, as Slack does.
+      if (url.pathname.startsWith("/_file/")) {
+        if (request.headers.authorization === "Bearer xoxb-test" && url.pathname.endsWith(".png")) {
+          response.writeHead(200, { "content-type": "image/png" });
+          return response.end(Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+        }
+        return send(response, 200, "<html>Sign in</html>", "text/html");
+      }
       const raw = bytes.toString("utf8");
       let body: Record<string, unknown> = {};
       if (raw !== "") {

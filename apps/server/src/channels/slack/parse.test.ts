@@ -137,6 +137,22 @@ describe("readSlackMessage", () => {
     assert.isNull(read({ channel: "CWATCH", user: BOT, bot_id: "BOTHER" }));
   });
 
+  it("reads a pasted image with its message, or alone, and leaves out other files", () => {
+    const shot = {
+      name: "shot.png",
+      mimetype: "image/png",
+      url_private_download: "https://files.slack.com/files-pri/T1-F1/download/shot.png",
+    };
+    const doc = { name: "notes.pdf", mimetype: "application/pdf", url_private: "https://x" };
+    const dm = { channel: "D1", channel_type: "im", user: "UME", subtype: "file_share" };
+    assert.deepStrictEqual(read({ ...dm, text: "this breaks", files: [shot, doc] })?.images, [
+      { name: "shot.png", mimeType: "image/png", source: shot.url_private_download },
+    ]);
+    assert.include(read({ ...dm, text: "", files: [shot] }), { text: "" });
+    assert.isNull(read({ ...dm, text: "", files: [doc] }));
+    assert.isUndefined(read({ channel: "D1", channel_type: "im", user: "UME" })?.images);
+  });
+
   it("ignores edits, joins and empty messages", () => {
     for (const event of [
       { channel: "CWATCH", user: BOT },

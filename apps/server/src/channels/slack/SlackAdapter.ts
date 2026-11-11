@@ -362,6 +362,38 @@ export const make = Effect.fn("SlackAdapter.make")(function* (settings: SlackSet
       yield* reaction("reactions.add", "white_check_mark");
     }),
     read: readThread,
+    image: Effect.fn("SlackAdapter.image")(function* (image, limit) {
+      const refused = (why: string) =>
+        new ChannelError({ message: `Could not fetch ${image.name} from Slack: ${why}.` });
+      // The bot token goes only to Slack's own file host.
+      const url = URL.parse(image.source);
+      if (
+        url === null ||
+        (url.origin !== "https://files.slack.com" &&
+          url.origin !== URL.parse(settings.apiUrl)?.origin)
+      ) {
+        return yield* refused("it is not a Slack file");
+      }
+      const response = yield* http
+        .execute(
+          HttpClientRequest.get(url.href).pipe(
+            HttpClientRequest.setHeaders({ Authorization: `Bearer ${settings.botToken}` }),
+          ),
+        )
+        .pipe(Effect.mapError(() => refused("the request failed")));
+      // Without the files:read scope Slack answers with its sign-in page instead of the file.
+      const type = response.headers["content-type"] ?? "";
+      if (response.status !== 200 || !type.startsWith("image/")) {
+        return yield* refused("Slack sent no image; the app may lack the files:read scope");
+      }
+      const size = Number(response.headers["content-length"] ?? Number.NaN);
+      if (size > limit) return yield* refused("it is too large");
+      const bytes = new Uint8Array(
+        yield* response.arrayBuffer.pipe(Effect.mapError(() => refused("the download failed"))),
+      );
+      if (bytes.byteLength > limit) return yield* refused("it is too large");
+      return bytes;
+    }),
     status: Effect.fn("SlackAdapter.status")(function* (ref, status) {
       const target = yield* refOf(ref);
       // Only DM threads are agent sessions; a channel thread has no session status.

@@ -61,7 +61,20 @@ const SlackMessageEvent = Schema.Struct({
   text: Schema.optional(Schema.String),
   ts: Schema.String,
   thread_ts: Schema.optional(Schema.String),
+  files: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        name: Schema.optional(Schema.String),
+        mimetype: Schema.optional(Schema.String),
+        url_private_download: Schema.optional(Schema.String),
+        url_private: Schema.optional(Schema.String),
+      }),
+    ),
+  ),
 });
+
+// The image types every provider reads.
+const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
 
 /** T3's own Slack identity, whose messages are never read back. */
 export interface SlackSelf {
@@ -91,10 +104,11 @@ export function readSlackMessage(
   return Option.flatMap(decodePayload(payload), ({ event }) =>
     Option.flatMap(decodeEvent(event), (message) => {
       const bot = message.bot_id !== undefined;
-      // Older integrations post as `bot_message`, with no user.
+      // Older integrations post as `bot_message`, with no user; a pasted image is a `file_share`.
       const allowedSubtype =
         message.subtype === undefined ||
         message.subtype === "thread_broadcast" ||
+        message.subtype === "file_share" ||
         (bot && message.subtype === "bot_message");
       if (
         !allowedSubtype ||
@@ -111,7 +125,13 @@ export function readSlackMessage(
       const watched =
         settings.watchedChannels === "all" || settings.watchedChannels.has(message.channel);
       const relevant = isDm ? fromUser : watched || (mentionsBot && fromUser);
-      if (!relevant || text === "") return Option.none();
+      const images = (message.files ?? []).flatMap((file) => {
+        const source = file.url_private_download ?? file.url_private;
+        return file.mimetype !== undefined && IMAGE_TYPES.has(file.mimetype) && source !== undefined
+          ? [{ name: file.name ?? "image", mimeType: file.mimetype, source }]
+          : [];
+      });
+      if (!relevant || (text === "" && images.length === 0)) return Option.none();
       return Option.some({
         id: `slack:${message.channel}:${message.ts}`,
         ref: `slack:${message.channel}:${message.thread_ts ?? message.ts}`,
@@ -124,6 +144,7 @@ export function readSlackMessage(
             ? "you"
             : `@${message.user}`,
         text: text.replaceAll(`<@${self.userId}>`, "").trim(),
+        ...(images.length > 0 ? { images } : {}),
       });
     }),
   );

@@ -1,4 +1,4 @@
-import type { ProjectId, ThreadId } from "@t3tools/contracts";
+import type { ChatAttachment, ProjectId, ThreadId } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -12,8 +12,10 @@ import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import { reportTarget } from "./bridge.ts";
 import { ChannelError, type ChannelAdapter, type ChannelHistoryEntry } from "./Channel.ts";
+import { ServerConfig } from "../config.ts";
 import * as ChannelBridge from "./ChannelBridge.ts";
 import { openChannelFile } from "./files.ts";
+import { copyImages, saveImages } from "./images.ts";
 import { CHANNELS } from "./registry.ts";
 
 export { ChannelError } from "./Channel.ts";
@@ -45,6 +47,12 @@ export interface ChannelsShape {
     ref: string,
     limit: number,
   ) => Effect.Effect<ReadonlyArray<ChannelHistoryEntry>, ChannelError>;
+  /** Copies a message's images to a message in another thread, which then owns its copies. */
+  readonly copyImages: (
+    threadId: ThreadId,
+    messageId: string,
+    attachments: ReadonlyArray<ChatAttachment>,
+  ) => Effect.Effect<ReadonlyArray<ChatAttachment>, ChannelError>;
   /** The latest messages of the conversation a task came from, and of no other. */
   readonly readTask: (
     threadId: ThreadId,
@@ -68,13 +76,14 @@ export const layer: Layer.Layer<
   | FileSystem.FileSystem
   | Path.Path
   | HttpClient.HttpClient
+  | ServerConfig
 > = Layer.effect(
   Channels,
   Effect.gen(function* () {
     const threads = yield* ThreadManagementService.ThreadManagementService;
     const engine = yield* Orchestrator.OrchestratorV2;
     const projects = yield* ProjectStore.ProjectStoreV2;
-    const fileServices = yield* Effect.context<FileSystem.FileSystem | Path.Path>();
+    const fileServices = yield* Effect.context<FileSystem.FileSystem | Path.Path | ServerConfig>();
     const state = ChannelBridge.makeState();
     const adapters: Array<ChannelAdapter> = [];
     for (const channel of CHANNELS) {
@@ -84,7 +93,14 @@ export const layer: Layer.Layer<
     const prefixes = adapters.map((adapter) => adapter.prefix);
     if (adapters.length > 0) {
       yield* Effect.forkScoped(
-        ChannelBridge.run({ adapters, threads, engine, state }).pipe(
+        ChannelBridge.run({
+          adapters,
+          threads,
+          engine,
+          state,
+          saveImages: (threadId, messageId, images) =>
+            saveImages(threadId, messageId, images).pipe(Effect.provide(fileServices)),
+        }).pipe(
           Effect.catchCause((cause) => Effect.logWarning("The channel bridge stopped", { cause })),
         ),
       );
@@ -181,6 +197,9 @@ export const layer: Layer.Layer<
         const adapter = yield* adapterFor(ref);
         return yield* adapter.read(ref, Math.max(1, Math.min(limit, 100)));
       }),
+      copyImages: Effect.fn("Channels.copyImages")((threadId, messageId, attachments) =>
+        copyImages(threadId, messageId, attachments).pipe(Effect.provide(fileServices)),
+      ),
     });
   }),
 );
