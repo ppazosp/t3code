@@ -17,6 +17,7 @@ import type {
   PullRequestLabel,
   PullRequestMergeCapabilities,
   PullRequestMergeMethod,
+  PullRequestMergeQueue,
   PullRequestOmittedFileStat,
   PullRequestMergeability,
   PullRequestReaction,
@@ -356,6 +357,7 @@ export interface GitHubPullRequestDetail extends GitHubPullRequestListItem {
   readonly checks: ReadonlyArray<PullRequestCheck>;
   readonly autoMergeEnabled?: boolean;
   readonly autoMergeMethod?: PullRequestMergeMethod;
+  readonly mergeQueue?: PullRequestMergeQueue;
 }
 
 export interface GitHubWorkflowRunApproval {
@@ -733,6 +735,27 @@ interface DetailFields extends ListItemFields {
     | { readonly mergeMethod?: string | null | undefined }
     | null
     | undefined;
+  readonly isInMergeQueue?: boolean | undefined;
+  readonly queueRemovals?: QueueRemovals | undefined;
+}
+
+interface QueueRemovals {
+  readonly nodes: ReadonlyArray<
+    | {
+        readonly __typename: "RemovedFromMergeQueueEvent";
+        readonly createdAt: string;
+        readonly reason: string | null;
+      }
+    | { readonly __typename: string }
+    | null
+  > | null;
+}
+
+function latestQueueRemoval(connection: QueueRemovals): PullRequestMergeQueue["lastRemoval"] {
+  const event = connection.nodes?.at(-1);
+  return event != null && "createdAt" in event
+    ? { at: event.createdAt, reason: event.reason ?? "unknown" }
+    : null;
 }
 
 function toDetail(raw: DetailFields): GitHubPullRequestDetail {
@@ -753,6 +776,14 @@ function toDetail(raw: DetailFields): GitHubPullRequestDetail {
       ? {}
       : { autoMergeEnabled: raw.autoMergeRequest !== null }),
     ...(autoMergeMethod === undefined ? {} : { autoMergeMethod }),
+    ...(raw.isInMergeQueue === undefined || raw.queueRemovals === undefined
+      ? {}
+      : {
+          mergeQueue: {
+            queued: raw.isInMergeQueue,
+            lastRemoval: latestQueueRemoval(raw.queueRemovals),
+          },
+        }),
   };
 }
 
@@ -966,6 +997,8 @@ export function toPullRequestWatchFingerprint(
       pr.headRefOid,
       stateCounts(contexts?.checkRunCountsByState ?? null),
       stateCounts(contexts?.statusContextCountsByState ?? null),
+      pr.isInMergeQueue,
+      latestQueueRemoval(pr.queueRemovals)?.at ?? "",
     ].join(" "),
     remarks: [
       pr.comments.totalCount,

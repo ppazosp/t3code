@@ -111,6 +111,16 @@ query PullRequestCore(
       autoMergeRequest {
         mergeMethod
       }
+      isInMergeQueue
+      # The latest time the merge queue let the pull request go, and why.
+      queueRemovals: timelineItems(last: 1, itemTypes: [REMOVED_FROM_MERGE_QUEUE_EVENT]) {
+        nodes {
+          ... on RemovedFromMergeQueueEvent {
+            createdAt
+            reason
+          }
+        }
+      }
       viewerCanUpdate
       viewerDidAuthor
       viewerCanUpdateBranch

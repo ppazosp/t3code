@@ -389,6 +389,56 @@ describe("evaluatePullRequestWatch", () => {
     );
   });
 
+  it("reports each time the merge queue drops the pull request and it stays out, once", () => {
+    const removed = (at: string, reason: string, queued = false) =>
+      detail({
+        checks: [check("lint", "success")],
+        mergeQueue: { queued, lastRemoval: { at, reason } },
+      });
+    const before = evaluatePullRequestWatch(
+      watch(),
+      removed("2026-10-02T11:00:00.000Z", "failed_checks"),
+      noRemarks,
+    );
+    assert.deepEqual(before.changes, [{ kind: "checks-passed", count: 1, required: false }]);
+    const failed = evaluatePullRequestWatch(
+      before.next,
+      removed("2026-10-02T12:30:00.000Z", "failed_checks"),
+      noRemarks,
+    );
+    assert.deepEqual(failed.changes, [{ kind: "left-merge-queue", reason: "failed_checks" }]);
+    assert.deepEqual(
+      evaluatePullRequestWatch(
+        failed.next,
+        removed("2026-10-02T12:30:00.000Z", "failed_checks"),
+        noRemarks,
+      ).changes,
+      [],
+    );
+    assert.deepEqual(
+      evaluatePullRequestWatch(
+        failed.next,
+        removed("2026-10-02T13:30:00.000Z", "manual"),
+        noRemarks,
+      ).changes,
+      [{ kind: "left-merge-queue", reason: "manual" }],
+    );
+    const requeued = evaluatePullRequestWatch(
+      failed.next,
+      removed("2026-10-02T14:00:00.000Z", "stack_invalidated", true),
+      noRemarks,
+    );
+    assert.deepEqual(requeued.changes, []);
+    assert.deepEqual(
+      evaluatePullRequestWatch(
+        requeued.next,
+        removed("2026-10-02T14:00:00.000Z", "stack_invalidated"),
+        noRemarks,
+      ).changes,
+      [],
+    );
+  });
+
   it("does not spend the comment wake limit on check results", () => {
     const tired = watch({ headSha: "aaaaaaaaaa", wakes: PULL_REQUEST_WATCH_WAKE_LIMIT - 1 });
     const result = evaluatePullRequestWatch(

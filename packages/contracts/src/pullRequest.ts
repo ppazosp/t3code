@@ -552,6 +552,13 @@ export const PullRequestReportStateInput = Schema.Struct({
 });
 export type PullRequestReportStateInput = typeof PullRequestReportStateInput.Type;
 
+export const PullRequestMergeQueue = Schema.Struct({
+  queued: Schema.Boolean,
+  /** The latest time the queue let the pull request go, with the host's reason code. */
+  lastRemoval: Schema.NullOr(Schema.Struct({ at: IsoDateTime, reason: Schema.String })),
+});
+export type PullRequestMergeQueue = typeof PullRequestMergeQueue.Type;
+
 export const PullRequestDetail = Schema.Struct({
   provider: SourceControlProviderKind,
   capabilities: PullRequestCapabilities,
@@ -592,6 +599,8 @@ export const PullRequestDetail = Schema.Struct({
   autoMergeMethod: Schema.optional(PullRequestMergeMethod),
   workflowApprovalsRequired: Schema.optional(NonNegativeInt),
   maintainerCanModify: Schema.optional(Schema.Boolean),
+  /** Absent where the host does not report a merge queue. */
+  mergeQueue: Schema.optional(PullRequestMergeQueue),
 });
 export type PullRequestDetail = typeof PullRequestDetail.Type;
 
