@@ -25,6 +25,7 @@ import {
   ScheduledTaskId,
   type ServerProvider,
   ThreadId,
+  ThreadTag,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
@@ -736,12 +737,15 @@ it.effect("arms durable title generation after accepting the first message", () 
         }),
         title: "Generate my title",
         generateTitle: true,
+        // Tagged before the first message, so its turn already sees the tag.
+        tags: [ThreadTag.make("accepted:task-1")],
       };
       const launched = yield* launches.launch(input);
       const generationCommandId = CommandId.make("command:launch:title-generation:initial-message");
 
       const projection = yield* threads.getThreadProjection(launched.threadId);
       assert.equal(projection.thread.title, "Generate my title");
+      assert.deepEqual(projection.thread.tags, ["accepted:task-1"]);
       assert.equal(projection.thread.titleRegeneration?.requestId, generationCommandId);
       assert.deepEqual(
         (yield* outbox.listByCommandId(generationCommandId)).map((effect) => effect.request),

@@ -1807,6 +1807,9 @@ export const make = Effect.gen(function* () {
             ...(changeRequest.workflowApprovalsRequired === undefined
               ? {}
               : { workflowApprovalsRequired: changeRequest.workflowApprovalsRequired }),
+            ...(changeRequest.mergeQueue === undefined
+              ? {}
+              : { mergeQueue: changeRequest.mergeQueue }),
           })),
         ),
       ),

@@ -990,6 +990,32 @@ it.layer(layerTest)("ThreadSearch.searchThreads", (it) => {
     }),
   );
 
+  it.effect("finds archived threads by title and message only when asked to", () =>
+    Effect.gen(function* () {
+      const projections = yield* ProjectionStore.ProjectionStoreV2;
+      const search = yield* ThreadSearch.ThreadSearch;
+      const project = ProjectId.make("project:archived-search");
+      yield* createProject(project);
+      const byTitle = ThreadId.make("thread:kestrel-title");
+      const byMessage = ThreadId.make("thread:kestrel-message");
+      yield* Effect.forEach(
+        [
+          thread(byTitle, project, { title: "Kestrel helper", archivedAt: at(1) }),
+          thread(byMessage, project, { archivedAt: at(1) }),
+          message(byMessage, "kestrel-1", "user", "the kestrel case"),
+        ],
+        projections.apply,
+        { discard: true },
+      );
+      const ids = (includeArchived: boolean) =>
+        search
+          .searchThreads({ query: "kestrel", limit: 10, includeArchived })
+          .pipe(Effect.map(({ matches }) => matches.map((match) => match.threadId).toSorted()));
+      assert.deepStrictEqual(yield* ids(false), []);
+      assert.deepStrictEqual(yield* ids(true), [byMessage, byTitle].toSorted());
+    }),
+  );
+
   it.effect("leaves titled threads out before the hit limit", () =>
     Effect.gen(function* () {
       const projections = yield* ProjectionStore.ProjectionStoreV2;

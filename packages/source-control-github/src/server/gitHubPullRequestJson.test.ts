@@ -368,6 +368,8 @@ describe("pull request detail decoding", () => {
             headRef: null,
             author: null,
             autoMergeRequest: null,
+            isInMergeQueue: false,
+            queueRemovals: { nodes: [] },
             viewerCanUpdate: true,
             viewerDidAuthor: false,
             viewerCanUpdateBranch: false,
@@ -516,6 +518,25 @@ describe("pull request detail decoding", () => {
       autoMergeMethod: "squash",
     });
     expect(detailOf([], { autoMergeRequest: null }).autoMergeEnabled).toBe(false);
+  });
+
+  it("reads when and why the merge queue last let the pull request go", () => {
+    const removal = (reason: string | null) => ({
+      queueRemovals: {
+        nodes: [
+          { __typename: "RemovedFromMergeQueueEvent", createdAt: "2026-07-05T10:00:00Z", reason },
+        ],
+      },
+    });
+    expect(detailOf([], removal("failed_checks")).mergeQueue).toEqual({
+      queued: false,
+      lastRemoval: { at: "2026-07-05T10:00:00Z", reason: "failed_checks" },
+    });
+    expect(detailOf([], removal(null)).mergeQueue?.lastRemoval?.reason).toBe("unknown");
+    expect(detailOf([], { isInMergeQueue: true }).mergeQueue).toEqual({
+      queued: true,
+      lastRemoval: null,
+    });
   });
 
   it("shows a re-running check once, as the run that is happening now", () => {
@@ -1647,6 +1668,8 @@ describe("pull request watch fingerprints", () => {
       readonly failed: number;
       readonly commentEditedAt: string | null;
       readonly reviews: number;
+      readonly dequeuedAt?: string;
+      readonly queued?: boolean;
     }) => ({
       state: "OPEN",
       mergeable: "MERGEABLE",
@@ -1654,6 +1677,19 @@ describe("pull request watch fingerprints", () => {
       comments: { totalCount: 1, nodes: [{ lastEditedAt: input.commentEditedAt }] },
       reviews: { totalCount: input.reviews, nodes: [] },
       reviewThreads: { totalCount: 0 },
+      isInMergeQueue: input.queued ?? false,
+      queueRemovals: {
+        nodes:
+          input.dequeuedAt === undefined
+            ? []
+            : [
+                {
+                  __typename: "RemovedFromMergeQueueEvent",
+                  createdAt: input.dequeuedAt,
+                  reason: "failed_checks",
+                },
+              ],
+      },
       commits: {
         nodes: [
           {
@@ -1680,11 +1716,16 @@ describe("pull request watch fingerprints", () => {
     const checkFinished = fingerprint({ ...base, running: 1, failed: 1 });
     const summaryEdited = fingerprint({ ...base, commentEditedAt: "2026-10-05T23:47:43Z" });
     const replied = fingerprint({ ...base, reviews: 2 });
+    const queued = fingerprint({ ...base, queued: true });
+    const dequeued = fingerprint({ ...base, dequeuedAt: "2026-10-05T23:50:00Z" });
 
     expect(checkFinished.status).not.toBe(before.status);
     expect(checkFinished.remarks).toBe(before.remarks);
     expect(summaryEdited.remarks).not.toBe(before.remarks);
     expect(summaryEdited.status).toBe(before.status);
     expect(replied.remarks).not.toBe(before.remarks);
+    expect(queued.status).not.toBe(before.status);
+    expect(dequeued.status).not.toBe(before.status);
+    expect(dequeued.remarks).toBe(before.remarks);
   });
 });

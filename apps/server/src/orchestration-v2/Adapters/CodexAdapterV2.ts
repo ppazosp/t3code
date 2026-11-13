@@ -105,7 +105,10 @@ import * as PortScanner from "../../preview/PortScanner.ts";
 import { getCodexServiceTierOptionValue } from "../../codexModelOptions.ts";
 import { ServerConfig } from "../../config.ts";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
-import { buildCodexAdditionalContext } from "../../provider/CodexDeveloperInstructions.ts";
+import {
+  buildCodexAdditionalContext,
+  buildCodexThreadContext,
+} from "../../provider/CodexDeveloperInstructions.ts";
 import {
   describeMcpElicitation,
   toMcpElicitationResponse,
@@ -804,10 +807,16 @@ export const buildCodexTurnStartParams = Effect.fn("CodexAdapterV2.buildCodexTur
             },
           )
         : undefined;
+    const threadContext =
+      input.runtimePolicy.instructions === undefined
+        ? {}
+        : buildCodexThreadContext(input.runtimePolicy.instructions);
     const additionalContext =
-      t3Context === undefined && Object.keys(appContext).length === 0
+      t3Context === undefined &&
+      Object.keys(threadContext).length === 0 &&
+      Object.keys(appContext).length === 0
         ? undefined
-        : { ...t3Context, ...appContext };
+        : { ...t3Context, ...threadContext, ...appContext };
     return yield* decodeCodexTurnStartParamsWithCollaborationMode({
       threadId: input.nativeThreadId,
       input: input.codexInput,
@@ -1373,6 +1382,28 @@ export const CODEX_THREAD_CONFIG = {
   mcp_optional_startup_grace_ms: 10_000,
 } as const;
 
+/**
+ * What a thread limited to its T3 tools turns off: every Codex tool that reaches past T3, such as
+ * the shell, web search, connectors, plugins, the browser and subagents (which get the full set).
+ */
+export const CODEX_T3_TOOLS_ONLY_CONFIG = {
+  "features.shell_tool": false,
+  "features.unified_exec": false,
+  "features.apps": false,
+  "features.plugins": false,
+  "features.image_generation": false,
+  "features.browser_use": false,
+  "features.browser_use_external": false,
+  "features.computer_use": false,
+  "features.view_image": false,
+  "features.multi_agent": false,
+  "features.multi_agent_v2": false,
+  "features.goals": false,
+  "features.sleep_tool": false,
+  "features.tool_suggest": false,
+  web_search: "disabled",
+} as const;
+
 // T3 waits can block for an hour; keep Codex's MCP timeout above that.
 const CODEX_T3_MCP_TOOL_TIMEOUT_SEC = 65 * 60;
 // Holds T3 tools Codex must call directly, never from Code Mode. Calls arrive as
@@ -1380,11 +1411,24 @@ const CODEX_T3_MCP_TOOL_TIMEOUT_SEC = 65 * 60;
 const CODEX_T3_DIRECT_MCP_SERVER = "t3-code-direct";
 const CODEX_DIRECT_ONLY_T3_TOOL = "t3_thread_wait";
 
-function codexThreadRuntimeParams(input: {
+/** The user's own MCP servers in a Codex config: every one but T3's. */
+export function codexOtherMcpServers(
+  config: Readonly<Record<string, unknown>>,
+): ReadonlyArray<string> {
+  const servers = config["mcp_servers"];
+  if (typeof servers !== "object" || servers === null || Array.isArray(servers)) return [];
+  return Object.keys(servers).filter(
+    (name) => name !== "t3-code" && name !== CODEX_T3_DIRECT_MCP_SERVER,
+  );
+}
+
+export function codexThreadRuntimeParams(input: {
   readonly threadId: ThreadId | null;
   readonly mcpSession: McpProviderSession.McpProviderSessionConfig | undefined;
   readonly modelSelection?: { readonly model: string };
   readonly runtimePolicy?: ProviderAdapter.ProviderAdapterV2RuntimePolicy;
+  /** The user's own MCP servers, which a thread limited to its T3 tools turns off. */
+  readonly otherMcpServers?: ReadonlyArray<string>;
 }): {
   readonly cwd?: string;
   readonly model?: string;
@@ -1399,11 +1443,20 @@ function codexThreadRuntimeParams(input: {
           tool_timeout_sec: CODEX_T3_MCP_TOOL_TIMEOUT_SEC,
           http_headers: { Authorization: mcpSession.authorizationHeader },
         };
+  const allowlist = input.runtimePolicy?.t3ToolAllowlist;
   return {
     ...(input.runtimePolicy?.cwd == null ? {} : { cwd: input.runtimePolicy.cwd }),
     ...(input.modelSelection === undefined ? {} : { model: input.modelSelection.model }),
     config: {
       ...CODEX_THREAD_CONFIG,
+      ...(allowlist === undefined
+        ? {}
+        : {
+            ...CODEX_T3_TOOLS_ONLY_CONFIG,
+            ...Object.fromEntries(
+              (input.otherMcpServers ?? []).map((name) => [`mcp_servers.${name}.enabled`, false]),
+            ),
+          }),
       // One app-server serves many threads, so the id goes in per-thread shell config, not its env.
       ...(input.threadId === null
         ? {}
@@ -1412,13 +1465,28 @@ function codexThreadRuntimeParams(input: {
         ? {}
         : {
             // Override only T3's servers so launch-argument MCP servers survive.
-            "mcp_servers.t3-code": { ...t3Server, disabled_tools: [CODEX_DIRECT_ONLY_T3_TOOL] },
+            "mcp_servers.t3-code": {
+              ...t3Server,
+              disabled_tools: [CODEX_DIRECT_ONLY_T3_TOOL],
+              // Codex declines a call it cannot ask about when the sandbox is not full access,
+              // so allowlisted tools are approved up front.
+              ...(allowlist === undefined
+                ? {}
+                : {
+                    enabled_tools: allowlist.filter((tool) => tool !== CODEX_DIRECT_ONLY_T3_TOOL),
+                    default_tools_approval_mode: "approve",
+                  }),
+            },
             // Code Mode runs a blocking wait as a nested call, and the model keeps working
             // around it. A second, direct-only registration makes it a plain tool call.
             [`mcp_servers.${CODEX_T3_DIRECT_MCP_SERVER}`]: {
               ...t3Server,
-              enabled_tools: [CODEX_DIRECT_ONLY_T3_TOOL],
+              enabled_tools:
+                allowlist === undefined || allowlist.includes(CODEX_DIRECT_ONLY_T3_TOOL)
+                  ? [CODEX_DIRECT_ONLY_T3_TOOL]
+                  : [],
               omit_tools_from: ["code_mode", "deferred"],
+              ...(allowlist === undefined ? {} : { default_tools_approval_mode: "approve" }),
             },
           }),
     },
@@ -6958,6 +7026,34 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             ),
         );
 
+        /**
+         * The user's MCP servers a thread limited to its T3 tools turns off, read from the config
+         * without starting them. A name a setting cannot address fails, so none stays on unnoticed.
+         */
+        const otherMcpServersFor = Effect.fn("CodexAdapterV2.otherMcpServersFor")(function* (
+          runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy | undefined,
+        ) {
+          if (runtimePolicy?.t3ToolAllowlist === undefined) return [];
+          const response = yield* ensureInitialized.pipe(
+            Effect.andThen(
+              client.request(
+                "config/read",
+                runtimePolicy.cwd == null ? {} : { cwd: runtimePolicy.cwd },
+              ),
+            ),
+          );
+          const names = codexOtherMcpServers(response.config);
+          const unaddressable = names.find((name) => !/^[\w-]+$/u.test(name));
+          if (unaddressable !== undefined) {
+            return yield* new ProviderAdapter.ProviderAdapterProtocolError({
+              driver: CODEX_PROVIDER,
+              detail: `Cannot turn off the MCP server "${unaddressable}" for a thread limited to T3 tools.`,
+              payload: unaddressable,
+            });
+          }
+          return names;
+        });
+
         const mcpAppsError = (detail: string) => (cause: unknown) =>
           new ProviderAdapter.ProviderAdapterProtocolError({
             driver: CODEX_PROVIDER,
@@ -7080,8 +7176,13 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           }),
           ensureThread: (threadInput) =>
             ensureInitialized.pipe(
-              Effect.andThen(mcpSessions.read(threadInput.threadId)),
-              Effect.flatMap((mcpSession) =>
+              Effect.andThen(
+                Effect.all([
+                  mcpSessions.read(threadInput.threadId),
+                  otherMcpServersFor(threadInput.runtimePolicy),
+                ]),
+              ),
+              Effect.flatMap(([mcpSession, otherMcpServers]) =>
                 client.request(
                   "thread/start",
                   codexThreadRuntimeParams({
@@ -7089,6 +7190,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                     mcpSession,
                     modelSelection: threadInput.modelSelection,
                     runtimePolicy: threadInput.runtimePolicy,
+                    otherMcpServers,
                   }),
                 ),
               ),
@@ -7120,6 +7222,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 ...codexThreadRuntimeParams({
                   threadId: appThreadId,
                   mcpSession: yield* readMcpSession(appThreadId),
+                  otherMcpServers: yield* otherMcpServersFor(threadInput.runtimePolicy),
                   ...(threadInput.modelSelection === undefined
                     ? {}
                     : { modelSelection: threadInput.modelSelection }),
@@ -7896,6 +7999,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                     mcpSession: yield* readMcpSession(threadInput.providerThread.appThreadId),
                     modelSelection: input.modelSelection,
                     runtimePolicy: input.runtimePolicy,
+                    otherMcpServers: yield* otherMcpServersFor(input.runtimePolicy),
                   }),
                 });
               }
@@ -7943,6 +8047,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 ...codexThreadRuntimeParams({
                   threadId: threadInput.targetThreadId,
                   mcpSession: yield* mcpSessions.read(threadInput.targetThreadId),
+                  otherMcpServers: yield* otherMcpServersFor(threadInput.runtimePolicy),
                   ...(threadInput.modelSelection === undefined
                     ? {}
                     : { modelSelection: threadInput.modelSelection }),

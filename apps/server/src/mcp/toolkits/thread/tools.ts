@@ -192,11 +192,12 @@ const ThreadTransferTool = Tool.make("t3_thread_transfer", {
 const ThreadSearchTool = Tool.make("t3_thread_search", {
   ...commandTool,
   description:
-    "Search active threads by title, branch, PR, project, then message text. Skips subagent threads. `projectId`: one project, else yours, else all outside a thread. Not exhaustive.",
+    "Search active threads by title, branch, PR, project, then message text; `includeArchived` adds archived ones. Skips subagent threads. `projectId`: one project, else yours, else all outside a thread (the router searches all). Not exhaustive.",
   parameters: Schema.Struct({
     environmentId: OrchestratorMcpEnvironmentTarget,
     ...OrchestrationSearchThreadsInput.fields,
     projectId: Schema.optional(ProjectId),
+    includeArchived: Schema.optional(Schema.Boolean),
   }),
   success: Schema.Struct({
     matches: Schema.Array(

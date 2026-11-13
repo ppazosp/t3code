@@ -3641,6 +3641,8 @@ export const OrchestrationV2ThreadLaunchInput = Schema.Struct({
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode,
   workspaceStrategy: OrchestrationV2ThreadLaunchWorkspaceStrategy,
+  /** Set on the new thread before its first turn starts, so that turn already sees them. */
+  tags: Schema.optional(Schema.Array(ThreadTag).check(Schema.isMaxLength(8))),
   initialMessage: Schema.optional(
     Schema.Struct({
       messageId: Schema.optional(MessageId),
