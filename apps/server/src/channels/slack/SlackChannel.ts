@@ -10,7 +10,9 @@ import * as SlackAdapter from "./SlackAdapter.ts";
  */
 export const slackChannel: ChannelDefinition<SlackSettings> = {
   name: "slack",
-  instructions: `Slack shows Markdown: bold, italics, lists, code and links. Headings show as bold text, and mentions do not notify anyone. People read your messages in a thread, so keep them short.
+  instructions: `Slack shows Markdown: bold, italics, lists, code and links. Headings show as bold text. People read your messages in a thread, so keep them short.
+
+To notify one person, write their tag, which messages show after their name, such as <@U0123ABC>. Tag only someone who needs to act or decide. @here, @channel and group mentions show as text and notify no one.
 
 To draw a chart, write a fenced code block with the language \`chart\`, holding one JSON object. Slack draws at most 2 per message.
 - Pie: {"kind":"pie","title":"Orders by state","segments":[{"label":"Shipped","value":12},{"label":"Late","value":3}]}

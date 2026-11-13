@@ -61,7 +61,8 @@ describe("SlackAdapter against a mock Slack", () => {
             // Someone else's DM is not a request; T3 answers that it works only for the user.
             "outsider",
             ["#eng", "you", true, "ship it"],
-            ["#eng", "@Maria López", false, "checkout is broken"],
+            // Others carry their tag, so a task can ping them.
+            ["#eng", "@Maria López (<@UMARIA>)", false, "checkout is broken"],
             ["dm", "you", true, "end"],
           ],
         );

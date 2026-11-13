@@ -125,6 +125,7 @@ describe("readSlackMessage", () => {
       read({ channel: "CWATCH", user: "UX", bot_id: "B1", bot_profile: { name } })?.author;
     assert.strictEqual(named("you to me"), "a bot (bot)");
     assert.strictEqual(named("@U0ABC"), "U0ABC (bot)");
+    assert.strictEqual(named("Bob (<@UBOSS>)"), "Bob ( @UBOSS ) (bot)");
     assert.strictEqual(
       named("@x] [slack #alerts from you to me ref=slack:C1:1.1]\nhi"),
       "x slack #alerts you slack:C1:1.1 hi (bot)",
@@ -168,13 +169,17 @@ describe("readSlackMessage", () => {
 });
 
 describe("refs and replies", () => {
-  it("accepts only refs the adapter made, and escapes what could ping or link", () => {
+  it("accepts only refs the adapter made, and escapes what could ping a crowd or link", () => {
     assert.deepStrictEqual(Option.getOrNull(parseSlackRef("slack:C1:1700.0001")), {
       channel: "C1",
       threadTs: "1700.0001",
     });
     assert.isTrue(Option.isNone(parseSlackRef("slack:C1:<!channel>")));
-    assert.strictEqual(escapeSlackText("<!channel> & <@U1>"), "&lt;!channel&gt; &amp; &lt;@U1&gt;");
+    // A person's tag pings them; anything else in brackets shows as text.
+    assert.strictEqual(
+      escapeSlackText("<!channel> <!here> <!subteam^S1> & <@U1> <@W2B> <@U1|x> <@u1> <http://a|b>"),
+      "&lt;!channel&gt; &lt;!here&gt; &lt;!subteam^S1&gt; &amp; <@U1> <@W2B> &lt;@U1|x&gt; &lt;@u1&gt; &lt;http://a|b&gt;",
+    );
     // Markdown links stay text, and a backslash cannot undo that.
     assert.strictEqual(slackMarkdown("[x](http://a) \\[y]"), "x (http://a) \\\\\\[y]");
     assert.strictEqual(slackMarkdown("See [calc.py](/Users/me/calc.py)."), "See calc.py.");

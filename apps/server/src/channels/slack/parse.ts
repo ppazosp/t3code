@@ -29,7 +29,7 @@ const SLACK_API_URL = "https://slack.com/api";
  */
 export const headerSafe = (name: string) =>
   name
-    .replaceAll(/[\][\n\r]/gu, " ")
+    .replaceAll(/[\][<>\n\r]/gu, " ")
     .replaceAll(/(^|\s)(from|to me|ref=)(?=\s|$)/giu, " ")
     .replaceAll(/ref=/giu, " ")
     .replaceAll(/\s+/gu, " ")
@@ -208,9 +208,16 @@ export function parseSlackRef(
   return match === null ? Option.none() : Option.some({ channel: match[1]!, threadTs: match[2]! });
 }
 
-/** Slack's control characters as text, so a reply cannot ping a channel or hide a link. */
+/**
+ * Slack's control characters as text, so a reply cannot ping a channel or hide a link. A person's
+ * tag, such as `<@U123>`, is kept: it pings that one person.
+ */
 export function escapeSlackText(text: string): string {
-  return text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+  return text
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll(/&lt;@([UW][A-Z0-9]+)&gt;/gu, "<@$1>");
 }
 
 // Slack refuses a Markdown block over 12,000 characters (measured for atta on 4 November 2026).

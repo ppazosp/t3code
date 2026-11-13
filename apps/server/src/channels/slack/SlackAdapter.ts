@@ -211,12 +211,12 @@ export const make = Effect.fn("SlackAdapter.make")(function* (settings: SlackSet
           Effect.orElseSucceed(() => fallback),
           Effect.tap((name) => Effect.sync(() => names.set(key, name))),
         );
-  // Always "@name": the header reads "from you" for the user, and a display name of "you" must
-  // never pass for that.
+  // Always "@name" and the person's tag: the header reads "from you" for the user, a display name
+  // of "you" must never pass for that, and the tag is what a task writes to ping them.
   const personName = (user: string) =>
     lookup(
       `user:${user}`,
-      `@${user}`,
+      "",
       call(`users.info?user=${encodeURIComponent(user)}`, undefined, UserInfo).pipe(
         Effect.map((info) => {
           const name =
@@ -227,7 +227,7 @@ export const make = Effect.fn("SlackAdapter.make")(function* (settings: SlackSet
           return name === undefined || name.trim() === "" ? undefined : `@${name}`;
         }),
       ),
-    );
+    ).pipe(Effect.map((name) => (name === "" ? `<@${user}>` : `${name} (<@${user}>)`)));
   const withNames = Effect.fn("SlackAdapter.withNames")(function* <
     M extends { readonly where: string; readonly author: string },
   >(message: M) {
