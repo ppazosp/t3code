@@ -7,6 +7,8 @@ import type {
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 
+/** Starts the id of the message that tells a thread its watched pull request merged. */
+export const MERGED_WAKE_MESSAGE_PREFIX = "message:pr-watch:merged:";
 /** Bounds consecutive comment-only wakes to stop bot reply loops; check, conflict, or push news resets it. */
 export const PULL_REQUEST_WATCH_WAKE_LIMIT = 10;
 /** How long a head may go without any check before the agent is told none reported. */

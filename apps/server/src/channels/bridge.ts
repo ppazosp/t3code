@@ -1,5 +1,6 @@
 import { ROUTER_TAG } from "@t3tools/contracts";
 
+import { MERGED_WAKE_MESSAGE_PREFIX } from "../orchestration-v2/pullRequestWatch.ts";
 import type { ChannelMessage } from "./Channel.ts";
 
 /** What the bridge knows about a thread, kept current from T3's events. */
@@ -100,18 +101,14 @@ export function taskMessageText(input: {
 /**
  * A run T3 started itself to tell a task its pull request changed. Its final message is for the
  * task, not the people in its conversation: the task posts with channel_say when it has news.
+ * A merge is the exception: it ends the work, so the task's answer is posted as the close.
  */
 export function isPullRequestWake(run: { readonly userMessageId: string }): boolean {
-  // The id the pull request watch gives the message it wakes a thread with.
-  return run.userMessageId.startsWith("message:pr-watch:");
-}
-
-/** What a task hears when a pull request it watched merges: its answer is posted as the close. */
-export function mergedText(
-  channel: string,
-  pullRequest: { readonly number: number; readonly url: string },
-): string {
-  return `Your pull request #${pullRequest.number} (${pullRequest.url}) merged. Your final message is posted in your ${channelLabel(channel)} thread: say in a line or two that it is done, and anything left for the user, such as a deploy to check.`;
+  // The ids the pull request watch gives the messages it wakes a thread with.
+  return (
+    run.userMessageId.startsWith("message:pr-watch:") &&
+    !run.userMessageId.startsWith(MERGED_WAKE_MESSAGE_PREFIX)
+  );
 }
 
 /** What a worker posts when its run ends: its last message, or how it ended without one. */

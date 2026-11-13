@@ -3455,6 +3455,108 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
     }),
   );
 
+  it.effect.each(["host read", "synced snapshot"] as const)(
+    "wakes its thread once when the watched pull request merges: %s",
+    (path) =>
+      Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const slug = path.replace(" ", "-");
+        const threadId = ThreadId.make(`runtime-pull-request-watch-merged-${slug}`);
+        const projectId = ProjectId.make(`pr-watch-merged-project-${slug}`);
+        yield* seedProject({
+          projectId,
+          title: "Watch merged",
+          workspaceRoot: "/workspace/watch-merged",
+          defaultModelSelection: null,
+          createdAt: "2026-10-01T00:00:00.000Z",
+        });
+        yield* orchestrator.dispatch({
+          type: "thread.create",
+          createdBy: "user",
+          creationSource: "web",
+          commandId: CommandId.make(`pr-watch-merged-create-${slug}`),
+          threadId,
+          projectId,
+          title: "Watch merged",
+          modelSelection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+        });
+        const key = { host: "github.com", repository: "pingdotgg/t3code", number: 12 } as const;
+        yield* orchestrator.dispatch({
+          type: "thread.pull-request.watch",
+          commandId: CommandId.make(`pr-watch-merged-start-${slug}`),
+          threadId,
+          ...key,
+          watching: true,
+          link: { url: "https://github.com/pingdotgg/t3code/pull/12", source: "agent" },
+        });
+        if (path === "synced snapshot") {
+          yield* orchestrator.dispatch({
+            type: "thread.pull-request-link.sync",
+            commandId: CommandId.make(`pr-watch-merged-sync-${slug}`),
+            threadId,
+            ...key,
+            snapshot: {
+              state: "merged",
+              title: "Watched pull request",
+              headBranch: "feature",
+              baseBranch: "main",
+              isDraft: false,
+              updatedAt: "2026-10-02T12:00:00.000Z",
+              syncedAt: "2026-10-02T12:00:00.000Z",
+              mergedAt: "2026-10-02T12:00:00.000Z",
+              closedAt: "2026-10-02T12:00:00.000Z",
+            },
+            stack: null,
+          });
+        }
+        const host = Layer.mergeAll(
+          NodeServices.layer,
+          NodeCrypto.layer,
+          Layer.mock(PullRequestService.PullRequestService)({
+            detail: () =>
+              Effect.succeed({
+                ...watchedPullRequestDetail({
+                  projectId,
+                  number: 12,
+                  at: "2026-10-02T12:00:00.000Z",
+                }),
+                state: "merged" as const,
+                mergedAt: "2026-10-02T12:00:00.000Z",
+                closedAt: "2026-10-02T12:00:00.000Z",
+              }),
+            activity: () =>
+              Effect.succeed({
+                comments: [],
+                commentCount: 0,
+                commentsTruncated: false,
+                reviewThreads: [],
+                commits: [],
+              }),
+          }),
+        );
+        const reactor = yield* PullRequestWatchReactor.make.pipe(Effect.provide(host));
+        yield* reactor.sweep;
+        yield* TestClock.adjust("10 minutes");
+        yield* reactor.sweep;
+
+        const { messages } = yield* orchestrator.getThreadRecords(threadId, ["messages"]);
+        const wakes = messages.filter((message) => message.notification !== undefined);
+        assert.deepEqual(
+          wakes.map((message) => message.notification?.summary),
+          ["#12: merged, stopped watching"],
+        );
+        assert.match(wakes[0]?.text ?? "", /merged/);
+        assert.match(wakes[0]?.id ?? "", /^message:pr-watch:merged:/);
+        const link = (yield* orchestrator.getThreadShell(threadId))?.pullRequests?.[0];
+        assert.isUndefined(link?.watch);
+        assert.isDefined(link?.endedWatch);
+      }),
+  );
+
   it.effect("finishes owed checks once after pending sweeps, a restart, and a re-watch", () =>
     Effect.gen(function* () {
       const orchestrator = yield* Orchestrator.OrchestratorV2;

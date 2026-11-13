@@ -140,77 +140,50 @@ function runBridge(input: {
 const task = thread("task", { tags: [ORIGIN] });
 
 describe("ChannelBridge", () => {
-  it.effect("posts each answer where the task came from, but not a pull request wake's", () =>
-    Effect.gen(function* () {
-      const { posts, statuses } = yield* runBridge({
-        events: [
-          // An accepted proposal's worker starts before it is tagged with where it came from.
-          threadEvent({ tags: [] }),
-          runEvent("run.created", "running"),
-          threadEvent({ tags: [ORIGIN], title: "Add CSV export" }),
-          itemEvent({ type: "assistant_message", text: "Working on it", streaming: true }),
-          itemEvent({ type: "assistant_message", text: "Done: **CSV** works.", streaming: false }),
-          runEvent("run.updated", "completed"),
-          runEvent("run.created", "running", "run:2"),
-          runEvent("run.updated", "interrupted", "run:2"),
-          // T3 woke the task about its pull request: what it concludes is for itself.
-          runEvent("run.created", "running", "run:3", "task", "message:pr-watch:abc"),
-          itemEvent({ type: "assistant_message", text: "CI passed.", streaming: false }, "run:3"),
-          runEvent("run.updated", "completed", "run:3", "task", "message:pr-watch:abc"),
-        ],
-      });
-      assert.deepStrictEqual(
-        posts.map((post) => post.text),
-        ["Done: **CSV** works.", "Stopped."],
-      );
-      assert.deepStrictEqual(statuses, [
-        [ORIGIN, "working"],
-        [ORIGIN, "idle"],
-        [ORIGIN, "working"],
-        [ORIGIN, "idle"],
-        [ORIGIN, "working"],
-        [ORIGIN, "idle"],
-      ]);
-    }),
-  );
-
-  it.effect("tells a task once when a pull request it watched merges, and no other", () =>
-    Effect.gen(function* () {
-      const link = (number: number, state: string, watched: boolean) => ({
-        url: `https://github.com/o/r/pull/${number}`,
-        number,
-        snapshot: { state },
-        ...(watched ? { watch: { startedAt: "2026-11-11T10:00:00.000Z" } } : {}),
-      });
-      const linkEvent = (threadId: string, payload: ReturnType<typeof link>) =>
-        ({ type: "thread.pull-request-link-updated", threadId, payload }) as never;
-      const { sent } = yield* runBridge({
-        existing: [
-          thread("router", { tags: ["router"] }),
-          // Watching #1 and #2; #3 merged before this start; #4 never watched.
-          thread("task", {
-            tags: [ORIGIN],
-            pullRequests: [link(1, "open", true), link(2, "open", true), link(3, "merged", true)],
-          }),
-          thread("mine", { pullRequests: [link(5, "open", true)] }),
-        ],
-        events: [
-          // T3 ends the watch as it sees the merge, then the snapshot catches up.
-          linkEvent("task", link(1, "open", false)),
-          linkEvent("task", link(1, "merged", false)),
-          linkEvent("task", link(1, "merged", false)),
-          linkEvent("task", link(3, "merged", false)),
-          linkEvent("task", link(4, "merged", false)),
-          // A thread with no conversation to close.
-          linkEvent("mine", link(5, "merged", false)),
-        ],
-      });
-      assert.deepStrictEqual(
-        sent.map((call) => call.threadId),
-        ["task"],
-      );
-      assert.include(sent[0]!.text, "Your pull request #1 (https://github.com/o/r/pull/1) merged.");
-    }),
+  it.effect(
+    "posts each answer where the task came from, but only a merge's pull request wake",
+    () =>
+      Effect.gen(function* () {
+        const { posts, statuses } = yield* runBridge({
+          events: [
+            // An accepted proposal's worker starts before it is tagged with where it came from.
+            threadEvent({ tags: [] }),
+            runEvent("run.created", "running"),
+            threadEvent({ tags: [ORIGIN], title: "Add CSV export" }),
+            itemEvent({ type: "assistant_message", text: "Working on it", streaming: true }),
+            itemEvent({
+              type: "assistant_message",
+              text: "Done: **CSV** works.",
+              streaming: false,
+            }),
+            runEvent("run.updated", "completed"),
+            runEvent("run.created", "running", "run:2"),
+            runEvent("run.updated", "interrupted", "run:2"),
+            // T3 woke the task about its pull request: what it concludes is for itself.
+            runEvent("run.created", "running", "run:3", "task", "message:pr-watch:abc"),
+            itemEvent({ type: "assistant_message", text: "CI passed.", streaming: false }, "run:3"),
+            runEvent("run.updated", "completed", "run:3", "task", "message:pr-watch:abc"),
+            // A merge ends the work, so its answer is the close.
+            runEvent("run.created", "running", "run:4", "task", "message:pr-watch:merged:def"),
+            itemEvent({ type: "assistant_message", text: "Merged.", streaming: false }, "run:4"),
+            runEvent("run.updated", "completed", "run:4", "task", "message:pr-watch:merged:def"),
+          ],
+        });
+        assert.deepStrictEqual(
+          posts.map((post) => post.text),
+          ["Done: **CSV** works.", "Stopped.", "Merged."],
+        );
+        assert.deepStrictEqual(statuses, [
+          [ORIGIN, "working"],
+          [ORIGIN, "idle"],
+          [ORIGIN, "working"],
+          [ORIGIN, "idle"],
+          [ORIGIN, "working"],
+          [ORIGIN, "idle"],
+          [ORIGIN, "working"],
+          [ORIGIN, "idle"],
+        ]);
+      }),
   );
 
   it.effect("leaves a task's delegate_task children to it, and posts once they finish", () =>
