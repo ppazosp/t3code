@@ -2,6 +2,7 @@ import {
   CommandId,
   type ModelSelection,
   type OrchestrationV2DomainEvent,
+  type OrchestrationV2ThreadShell,
   ThreadId,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
@@ -52,10 +53,17 @@ export const layer = Layer.effectDiscard(
         modelSelection,
       });
     });
+    // The listing carries no tags, so each thread's shell is read to find the router.
     const applyAll = threads.listProjectThreads({ includeSubagents: false }).pipe(
+      Effect.flatMap((entries) =>
+        Effect.forEach(entries, (entry) => threads.getThreadShell(entry.id)),
+      ),
       Effect.flatMap((shells) =>
         Effect.forEach(
-          shells.filter((shell) => isRouterThread(shell) && shell.archivedAt === null),
+          shells.filter(
+            (shell): shell is OrchestrationV2ThreadShell =>
+              shell !== null && isRouterThread(shell) && shell.archivedAt === null,
+          ),
           apply,
         ),
       ),

@@ -96,9 +96,11 @@ function runBridge(input: {
         : Effect.succeed(bytes);
     },
   };
+  const existing = input.existing ?? [thread("router", { tags: ["router"] })];
   const threads = {
-    listProjectThreads: () =>
-      Effect.succeed(input.existing ?? [thread("router", { tags: ["router"] })]),
+    listProjectThreads: () => Effect.succeed(existing),
+    getThreadShell: (id: string) =>
+      Effect.succeed(existing.find((shell) => shell.id === id) ?? null),
     sendToThread: (call: { threadId: string; text: string; attachments: ReadonlyArray<unknown> }) =>
       Effect.sync(
         () =>

@@ -172,9 +172,12 @@ export const run = Effect.fn("ChannelBridge.run")(function* (input: {
   const adapterFor = (ref: string) => adapters.find((adapter) => ref.startsWith(adapter.prefix));
 
   const known = new Map<string, BridgeThread>();
-  for (const shell of yield* threads
+  // The listing carries no tags or modes, so each thread's shell is read once at start.
+  for (const entry of yield* threads
     .listProjectThreads({ includeSubagents: false })
     .pipe(Effect.orElseSucceed(() => []))) {
+    const shell = yield* threads.getThreadShell(entry.id).pipe(Effect.orElseSucceed(() => null));
+    if (shell === null) continue;
     const thread = toBridgeThread(shell);
     known.set(thread.id, thread);
   }
