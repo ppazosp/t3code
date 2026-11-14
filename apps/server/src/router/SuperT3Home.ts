@@ -5,6 +5,8 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
+import { workerInstructions as channelBlock } from "../channels/instructions.ts";
+import { CHANNELS } from "../channels/registry.ts";
 import { ServerConfig } from "../config.ts";
 import { DEFAULT_ROUTER_MD, DEFAULT_WORKER_MD } from "./defaults.ts";
 
@@ -32,12 +34,19 @@ export const DEFAULT_CONFIG: SuperT3Config = {
 };
 
 const decodeConfig = Schema.decodeUnknownEffect(Schema.fromJsonString(SuperT3Config));
+
+/** The block a worker from a channel's conversation gets until the user edits its file. */
+const defaultChannelInstructions = (name: string) => {
+  const channel = CHANNELS.find((candidate) => candidate.name === name);
+  return channel === undefined ? undefined : channelBlock(channel.name, channel.instructions);
+};
 const DEFAULT_CONFIG_TEXT = `${JSON.stringify(DEFAULT_CONFIG, null, 2)}\n`;
 
 /**
  * super-t3's own folder in T3's home: `config.json` (the router's and workers' models), `ROUTER.md`
- * (the router's system prompt) and `WORKER.md` (added to every worker's). They start as defaults and
- * the user edits them; each read takes the file as it is now, so an edit applies on the next turn.
+ * (the router's system prompt), `WORKER.md` (added to every worker's) and one file per channel, such
+ * as `SLACK.md` (added to a worker from that channel's conversation). They start as defaults and the
+ * user edits them; each read takes the file as it is now, so an edit applies on the next turn.
  */
 export class SuperT3Home extends Context.Service<
   SuperT3Home,
@@ -49,6 +58,8 @@ export class SuperT3Home extends Context.Service<
     readonly routerInstructions: Effect.Effect<string>;
     /** Nothing when WORKER.md is empty. */
     readonly workerInstructions: Effect.Effect<string | undefined>;
+    /** The default when the channel's file is empty; nothing for a channel T3 does not know. */
+    readonly channelInstructions: (channel: string) => Effect.Effect<string | undefined>;
   }
 >()("t3/router/SuperT3Home") {}
 
@@ -65,6 +76,7 @@ export const layer = Layer.effect(
       router: path.join(dir, "ROUTER.md"),
       worker: path.join(dir, "WORKER.md"),
     };
+    const channelFile = (name: string) => path.join(dir, `${name.toUpperCase()}.md`);
     // Homes made before the names were upper case: rename by exact listing, since macOS matches
     // names without case and would report ROUTER.md as there already.
     const renameLowerCase = Effect.gen(function* () {
@@ -89,6 +101,9 @@ export const layer = Layer.effect(
       seed(files.config, DEFAULT_CONFIG_TEXT),
       seed(files.router, DEFAULT_ROUTER_MD),
       seed(files.worker, DEFAULT_WORKER_MD),
+      ...CHANNELS.map((channel) =>
+        seed(channelFile(channel.name), defaultChannelInstructions(channel.name)!),
+      ),
     ]).pipe(
       Effect.catchCause((cause) =>
         Effect.logWarning("Could not set up super-t3's folder", { cause }),
@@ -118,6 +133,12 @@ export const layer = Layer.effect(
       workerInstructions: read(files.worker).pipe(
         Effect.map((text) => (text === undefined || text.trim() === "" ? undefined : text)),
       ),
+      channelInstructions: Effect.fn("SuperT3Home.channelInstructions")(function* (channel) {
+        const fallback = defaultChannelInstructions(channel);
+        if (fallback === undefined) return undefined;
+        const text = yield* read(channelFile(channel));
+        return text === undefined || text.trim() === "" ? fallback : text;
+      }),
     });
   }),
 );
@@ -126,6 +147,7 @@ export const layer = Layer.effect(
 export const layerOf = (files: {
   readonly routerInstructions?: string;
   readonly workerInstructions?: string;
+  readonly channelInstructions?: Readonly<Record<string, string>>;
   readonly config?: SuperT3Config;
 }) =>
   Layer.succeed(
@@ -136,5 +158,10 @@ export const layerOf = (files: {
       config: Effect.succeed(files.config ?? DEFAULT_CONFIG),
       routerInstructions: Effect.succeed(files.routerInstructions ?? DEFAULT_ROUTER_MD),
       workerInstructions: Effect.succeed(files.workerInstructions),
+      channelInstructions: Effect.fn("SuperT3Home.channelInstructions")((channel: string) =>
+        Effect.sync(
+          () => files.channelInstructions?.[channel] ?? defaultChannelInstructions(channel),
+        ),
+      ),
     }),
   );

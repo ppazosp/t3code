@@ -6,6 +6,8 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 
 import { ServerConfig } from "../config.ts";
+import { workerInstructions as channelBlock } from "../channels/instructions.ts";
+import { slackChannel } from "../channels/slack/SlackChannel.ts";
 import { DEFAULT_WORKER_MD } from "./defaults.ts";
 import * as SuperT3Home from "./SuperT3Home.ts";
 
@@ -25,15 +27,24 @@ describe("SuperT3Home", () => {
         ),
       );
       const names = yield* fs.readDirectory(dir);
-      assert.includeMembers(names, ["ROUTER.md", "WORKER.md", "config.json", "router"]);
+      assert.includeMembers(names, ["ROUTER.md", "WORKER.md", "SLACK.md", "config.json", "router"]);
       assert.notInclude(names, "router.md");
       assert.strictEqual(yield* home.routerInstructions, "# My router\n");
       assert.strictEqual(yield* home.workerInstructions, DEFAULT_WORKER_MD);
       assert.deepStrictEqual(yield* home.config, SuperT3Home.DEFAULT_CONFIG);
 
-      // An edit applies on the next read; an empty WORKER.md adds nothing.
+      const slackDefault = channelBlock("slack", slackChannel.instructions);
+      assert.strictEqual(yield* home.channelInstructions("slack"), slackDefault);
+      assert.isUndefined(yield* home.channelInstructions("teams"));
+
+      // An edit applies on the next read; an empty WORKER.md adds nothing, an empty SLACK.md
+      // falls back to the default.
       yield* fs.writeFileString(path.join(dir, "WORKER.md"), "  \n");
       assert.isUndefined(yield* home.workerInstructions);
+      yield* fs.writeFileString(path.join(dir, "SLACK.md"), "# My Slack\n");
+      assert.strictEqual(yield* home.channelInstructions("slack"), "# My Slack\n");
+      yield* fs.writeFileString(path.join(dir, "SLACK.md"), "");
+      assert.strictEqual(yield* home.channelInstructions("slack"), slackDefault);
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 });

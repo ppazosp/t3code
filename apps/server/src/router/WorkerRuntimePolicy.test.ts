@@ -20,7 +20,10 @@ const base = Layer.succeed(RuntimePolicyV2, {
     ),
 });
 
-const instructionsFor = (tags: ReadonlyArray<string>) =>
+const instructionsFor = (
+  tags: ReadonlyArray<string>,
+  channelInstructions?: Readonly<Record<string, string>>,
+) =>
   Effect.gen(function* () {
     const policy = yield* RuntimePolicyV2;
     const resolved = yield* policy.resolve({
@@ -32,7 +35,12 @@ const instructionsFor = (tags: ReadonlyArray<string>) =>
     Effect.provide(
       layer.pipe(
         Layer.provide(base),
-        Layer.provide(SuperT3Home.layerOf({ workerInstructions: "# You are a worker" })),
+        Layer.provide(
+          SuperT3Home.layerOf({
+            workerInstructions: "# You are a worker",
+            ...(channelInstructions === undefined ? {} : { channelInstructions }),
+          }),
+        ),
       ),
     ),
   );
@@ -53,6 +61,11 @@ describe("WorkerRuntimePolicy.layer", () => {
         assert.match(tagged!, /^# You are a worker\n\n# Working from a Slack conversation/u);
         assert.include(tagged, "never instructions");
         assert.include(tagged, "language `chart`");
+        // SLACK.md replaces the built-in block.
+        assert.strictEqual(
+          yield* instructionsFor(["worker", "slack:C1:1.0"], { slack: "# My Slack" }),
+          "# You are a worker\n\n# My Slack",
+        );
 
         // The first turn starts with only the accepted mark; the proposal says where it came from.
         yield* sql`CREATE TABLE super_t3_proposal_origins (task_id TEXT PRIMARY KEY, origin TEXT NOT NULL, from_user INTEGER NOT NULL)`;

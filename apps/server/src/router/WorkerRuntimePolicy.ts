@@ -5,7 +5,6 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 
-import { workerInstructions as channelInstructions } from "../channels/instructions.ts";
 import { CHANNELS, type RegisteredChannel } from "../channels/registry.ts";
 import { RuntimePolicyV2 } from "../orchestration-v2/RuntimePolicy.ts";
 import { SuperT3Home } from "./SuperT3Home.ts";
@@ -19,7 +18,7 @@ const channelOf = (ref: string, channels: ReadonlyArray<RegisteredChannel>) =>
 
 /**
  * Gives every worker the router proposed WORKER.md as part of its system prompt, read on every turn,
- * and a worker from a channel conversation the block for working there plus the channel's own. Its
+ * and a worker from a channel conversation that channel's file, such as SLACK.md, as well. Its
  * first turn starts before the proposal is turned into tags, so a thread marked accepted reads its
  * origin from the proposal.
  */
@@ -55,9 +54,7 @@ export const layer: Layer.Layer<
         const channel = origin === undefined ? undefined : channelOf(origin, CHANNELS);
         const blocks = [
           yield* home.workerInstructions,
-          channel === undefined
-            ? undefined
-            : channelInstructions(channel.name, channel.instructions),
+          channel === undefined ? undefined : yield* home.channelInstructions(channel.name),
         ].filter((block) => block !== undefined);
         if (blocks.length === 0) return policy;
         return ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
