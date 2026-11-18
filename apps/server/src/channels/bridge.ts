@@ -124,6 +124,22 @@ export function isPullRequestWake(run: { readonly userMessageId: string }): bool
   );
 }
 
+/**
+ * Whether someone asked for this run: a channel message, a router route or a dispatch brief.
+ * Its answer goes out even while the thread's children still run.
+ */
+export function isAsked(
+  run: { readonly userMessageId: string },
+  prefixes: ReadonlyArray<string>,
+): boolean {
+  const id = run.userMessageId;
+  return (
+    id.startsWith("route:") ||
+    id.startsWith("dispatch:") ||
+    prefixes.some((prefix) => id.startsWith(prefix))
+  );
+}
+
 /** What a worker posts when its run ends: its last message, or how it ended without one. */
 export function resultText(
   outcome: "completed" | "failed" | "interrupted",

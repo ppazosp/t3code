@@ -274,6 +274,34 @@ describe("ChannelBridge", () => {
     }),
   );
 
+  it.effect("answers a question asked in Slack while the task's children still run", () =>
+    Effect.gen(function* () {
+      const child = thread("child", {
+        tags: [ORIGIN],
+        lineage: { parentThreadId: "task", relationshipToParent: "subagent", rootThreadId: "task" },
+      });
+      const { posts } = yield* runBridge({
+        existing: [thread("router", { tags: ["router"] }), task, child],
+        events: [
+          runEvent("run.created", "running", "run:c", "child"),
+          runEvent("run.created", "running", "run:1", "task", `${ORIGIN}:q1`),
+          itemEvent({ type: "assistant_message", text: "16 CPUs, 64 GB.", streaming: false }),
+          runEvent("run.updated", "completed", "run:1", "task", `${ORIGIN}:q1`),
+          runEvent("run.created", "running", "run:2", "task", "route:task:1"),
+          itemEvent(
+            { type: "assistant_message", text: "Started another child.", streaming: false },
+            "run:2",
+          ),
+          runEvent("run.updated", "completed", "run:2", "task", "route:task:1"),
+        ],
+      });
+      assert.deepStrictEqual(
+        posts.map((post) => post.text),
+        ["16 CPUs, 64 GB.", "Started another child."],
+      );
+    }),
+  );
+
   it.effect("posts a planning run's plan and waits for the user", () =>
     Effect.gen(function* () {
       const { posts, statuses } = yield* runBridge({

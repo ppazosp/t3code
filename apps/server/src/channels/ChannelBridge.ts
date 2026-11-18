@@ -14,6 +14,7 @@ import type * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import type * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import type { ChannelAdapter, ChannelError, ChannelEvent, ChannelMessage } from "./Channel.ts";
 import {
+  isAsked,
   isPullRequestWake,
   isRouter,
   isStop,
@@ -448,7 +449,14 @@ export const run = Effect.fn("ChannelBridge.run")(function* (input: {
     const saidThere = state.saidIn.get(runRecord.threadId)?.has(report.ref) === true;
     state.saidIn.delete(runRecord.threadId);
     // A turn that ends to wait for its children is not an answer: it reports once they finish.
-    if (outcome === "completed" && childrenRunning(runRecord.threadId)) return;
+    // A turn someone asked for is their answer, though children still run.
+    if (
+      outcome === "completed" &&
+      !isAsked(runRecord, prefixes) &&
+      childrenRunning(runRecord.threadId)
+    ) {
+      return;
+    }
     // A plan is what a planning run ends with; it goes out like any answer, for the user to answer.
     const text = resultText(outcome, report.plan ?? report.result);
     // Asked from another conversation, a task that answered there with channel_say is not repeated.
