@@ -50,11 +50,12 @@ const DispatchWorkerTool = Tool.make("dispatch_worker", {
 
 const RouteToThreadTool = Tool.make("route_to_thread", {
   description:
-    "Router only. Pass new information straight to a worker thread already on that matter (not archived), with no proposal. `ref` is the one in the header of the channel message you are routing (leave it out only for what the user typed to you in T3 or a worker's request). The worker gets that message, who wrote it, and your `note`. A worker with no conversation of its own takes the one the user's message came from; one that has its own keeps it and answers the user where they asked. Someone else's message only reaches a worker that is working now.",
+    "Router only. Pass new information straight to a worker thread already on that matter (not archived), with no proposal. `ref` is the one in the header of the channel message you are routing (leave it out only for what the user typed to you in T3 or a worker's request). The worker gets that message, who wrote it, and your `note`. A worker with no conversation of its own takes the one the user's message came from; one that has its own keeps it and answers the user where they asked. Set `move` only when the user asks to make that conversation the worker's own: it posts there from then on. Someone else's message only reaches a worker that is working now.",
   parameters: Schema.Struct({
     threadId: ThreadId,
     ref: Schema.optional(Schema.String),
     note: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(4000)),
+    move: Schema.optional(Schema.Boolean),
   }),
   success: Schema.Struct({ routed: Schema.Literal(true), link: Schema.String }),
   failure: OrchestratorMcpFailure,

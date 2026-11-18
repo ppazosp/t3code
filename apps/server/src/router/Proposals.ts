@@ -161,13 +161,34 @@ export function routedConversation(input: {
   readonly current: ReadonlyArray<string>;
   readonly ref: string;
   readonly channels: ReadonlyArray<string>;
+  /** The user asked to make this conversation the worker's own. */
+  readonly move?: boolean | undefined;
 }): { readonly adopt: boolean; readonly answerIn: string | null } {
   const own = input.current.find((tag) =>
     input.channels.some((name) => tag.startsWith(`${name}:`)),
   );
-  return own === undefined || own === input.ref
+  return input.move === true || own === undefined || own === input.ref
     ? { adopt: true, answerIn: null }
     : { adopt: false, answerIn: input.ref };
+}
+
+/**
+ * The channel message a route forwards from a conversation: the user's own request there in this
+ * turn when there is one, since others keep writing while the router works; else the latest.
+ */
+export function routedChannelMessage<
+  M extends { readonly creationSource: string; readonly text: string },
+>(messages: ReadonlyArray<M>, ref: string): M | undefined {
+  const there = messages.filter(
+    (message) =>
+      message.creationSource === "server" && readChannelHeader(message.text)?.ref === ref,
+  );
+  return (
+    there.findLast((message) => {
+      const header = readChannelHeader(message.text);
+      return header !== null && isUsersOwn(header);
+    }) ?? there.at(-1)
+  );
 }
 
 /**
@@ -327,6 +348,8 @@ export interface RouteInput {
   /** The channel message routed, by the ref in its header; none for what the user typed in T3. */
   readonly ref: string | undefined;
   readonly note: string;
+  /** The user asked to make the message's conversation the worker's own. */
+  readonly move?: boolean | undefined;
 }
 
 /** A worker's request to the router for work outside its own task. */
@@ -579,10 +602,7 @@ export const layer = Layer.effect(
         }
         return { origin: null, fromUser: true, source: null, images: latest.attachments ?? [] };
       }
-      const message = userMessages.findLast(
-        (candidate) =>
-          candidate.creationSource === "server" && readChannelHeader(candidate.text)?.ref === ref,
-      );
+      const message = routedChannelMessage(userMessages, ref);
       const header = message === undefined ? null : readChannelHeader(message.text);
       if (message === undefined || header === null) {
         return yield* new ProposalError({
@@ -743,6 +763,7 @@ export const layer = Layer.effect(
                 current: shell.tags ?? [],
                 ref: origin,
                 channels: CHANNELS.map((channel) => channel.name),
+                move: input.move,
               })
             : null;
         if (origin !== null && placement !== null && placement.adopt) {

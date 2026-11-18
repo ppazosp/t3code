@@ -14,6 +14,7 @@ import {
   currentRunMessages,
   isUsersRequest,
   isWorkerThread,
+  routedChannelMessage,
   routedConversation,
   routedText,
   routeRefusal,
@@ -194,6 +195,33 @@ describe("Proposals", () => {
       routedConversation({ current: ["worker", "slack:C1:1.0"], ref: "slack:C2:2.0", channels }),
       { adopt: false, answerIn: "slack:C2:2.0" },
     );
+    // Moved on the user's word: the conversation becomes the worker's own.
+    assert.deepStrictEqual(
+      routedConversation({
+        current: ["worker", "slack:C1:1.0"],
+        ref: "slack:C2:2.0",
+        channels,
+        move: true,
+      }),
+      { adopt: true, answerIn: null },
+    );
+  });
+
+  it("routes the user's own request from a conversation, though others kept writing there", () => {
+    const at = (text: string) => ({ creationSource: "server", text });
+    const ref = "slack:C1:1.0";
+    const request = at(`[slack #ci from you to me ref=${ref}]\n> pass it to the worker`);
+    const turn = [
+      at(`[slack #ci from @Jorge ref=${ref}]\n> my idea`),
+      request,
+      at(`[slack #ci from you ref=${ref}]\n> jgsdjag`),
+      at(`[slack #ci from @Jorge ref=${ref}]\n> yeyeye`),
+      at(`[slack #devs from you to me ref=slack:C2:2.0]\n> elsewhere`),
+    ];
+    assert.strictEqual(routedChannelMessage(turn, ref), request);
+    // With no request from the user there, the latest message is the one routed.
+    assert.strictEqual(routedChannelMessage(turn.slice(2, 4), ref), turn[3]);
+    assert.isUndefined(routedChannelMessage(turn, "slack:C9:9.0"));
   });
 
   it("routes only to live workers, and lets only the user's words wake an idle one", () => {
