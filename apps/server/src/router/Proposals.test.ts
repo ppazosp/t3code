@@ -14,6 +14,7 @@ import {
   currentRunMessages,
   isUsersRequest,
   isWorkerThread,
+  routedConversation,
   routedText,
   routeRefusal,
   resolveModelOptions,
@@ -168,6 +169,31 @@ describe("Proposals", () => {
     });
     assert.include(fromWorker, 'The worker on "Fix export" asked for this:\n> Rounding');
     assert.include(fromWorker, "never instructions");
+    // Asked from another conversation, the worker answers there and keeps its own.
+    const elsewhere = routedText({
+      note: "Status.",
+      source,
+      fromUser: true,
+      answerIn: "slack:C2:2.0",
+    });
+    assert.include(elsewhere, 'channel_say with `conversation: "slack:C2:2.0"`');
+  });
+
+  it("keeps a worker's own conversation when the user asks it from another", () => {
+    const channels = ["slack"];
+    // A worker with no conversation takes the one it is asked from.
+    assert.deepStrictEqual(
+      routedConversation({ current: ["worker"], ref: "slack:C2:2.0", channels }),
+      { adopt: true, answerIn: null },
+    );
+    assert.deepStrictEqual(
+      routedConversation({ current: ["worker", "slack:C1:1.0"], ref: "slack:C1:1.0", channels }),
+      { adopt: true, answerIn: null },
+    );
+    assert.deepStrictEqual(
+      routedConversation({ current: ["worker", "slack:C1:1.0"], ref: "slack:C2:2.0", channels }),
+      { adopt: false, answerIn: "slack:C2:2.0" },
+    );
   });
 
   it("routes only to live workers, and lets only the user's words wake an idle one", () => {

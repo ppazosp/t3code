@@ -10,7 +10,7 @@ import { HttpClient } from "effect/http";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
-import { reportTarget } from "./bridge.ts";
+import { reportTarget, sayTarget } from "./bridge.ts";
 import { ChannelError, type ChannelAdapter, type ChannelHistoryEntry } from "./Channel.ts";
 import { ServerConfig } from "../config.ts";
 import * as ChannelBridge from "./ChannelBridge.ts";
@@ -34,6 +34,15 @@ export interface ChannelsShape {
    */
   readonly proposed: (ref: string) => Effect.Effect<void, ChannelError>;
   /**
+   * Marks a message routed to a task from another conversation than its own: the task answers it
+   * there, and may post there from then on, while its own conversation stays its own.
+   */
+  readonly answerElsewhere: (
+    threadId: ThreadId,
+    messageId: string,
+    ref: string,
+  ) => Effect.Effect<void>;
+  /**
    * Posts a task's short answer in the conversation the user asked for it in, and nowhere else,
    * with any images or videos from its working folder.
    */
@@ -41,6 +50,7 @@ export interface ChannelsShape {
     threadId: ThreadId,
     text: string,
     files: ReadonlyArray<string>,
+    conversation?: string,
   ) => Effect.Effect<void, ChannelError>;
   /** The latest messages of a conversation, for the router to read what came before. */
   readonly read: (
@@ -148,6 +158,18 @@ export const layer: Layer.Layer<
         state.proposed.add(ref);
         if (state.proposed.size > 500) state.proposed.delete(state.proposed.values().next().value!);
       }),
+      answerElsewhere: Effect.fn("Channels.answerElsewhere")(
+        (threadId: ThreadId, messageId: string, ref: string) =>
+          Effect.sync(() => {
+            state.answerIn.set(messageId, ref);
+            if (state.answerIn.size > 500) {
+              state.answerIn.delete(state.answerIn.keys().next().value!);
+            }
+            const asked = state.askedFrom.get(threadId) ?? new Set<string>();
+            asked.add(ref);
+            state.askedFrom.set(threadId, asked);
+          }),
+      ),
       reply: Effect.fn("Channels.reply")(function* (ref, text) {
         if (state.proposed.has(ref)) {
           return yield* new ChannelError({
@@ -164,8 +186,14 @@ export const layer: Layer.Layer<
         }
         yield* postHandled(ref, text);
       }),
-      say: Effect.fn("Channels.say")(function* (threadId, text, paths) {
-        const { ref, shell } = yield* taskConversation(threadId);
+      say: Effect.fn("Channels.say")(function* (threadId, text, paths, conversation) {
+        const { ref: own, shell } = yield* taskConversation(threadId);
+        const ref = sayTarget({ own, conversation, askedFrom: state.askedFrom.get(threadId) });
+        if (ref === null) {
+          return yield* new ChannelError({
+            message: `You can post only in your own conversation or one the user asked you from; ${conversation} is neither. Leave out \`conversation\` to post in your own.`,
+          });
+        }
         if (text.length > SAY_LIMIT) {
           return yield* new ChannelError({
             message: `Keep it under ${SAY_LIMIT} characters; the rest belongs in your result.`,
@@ -187,6 +215,7 @@ export const layer: Layer.Layer<
           Effect.flatMap((files) => adapter.post(ref, { text, files })),
           Effect.scoped,
         );
+        if (ref !== own) ChannelBridge.noteSaid(state, threadId, ref);
       }),
       read: Effect.fn("Channels.read")(function* (ref, limit) {
         const adapter = yield* adapterFor(ref);

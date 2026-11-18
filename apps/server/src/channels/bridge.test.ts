@@ -7,6 +7,7 @@ import {
   reportTarget,
   resultText,
   routerMessageText,
+  sayTarget,
   type BridgeThread,
 } from "./bridge.ts";
 
@@ -43,6 +44,24 @@ describe("bridge", () => {
     assert.isNull(reportTarget(thread("t", { tags: ["router", ORIGIN] }), ["slack:"]));
     assert.isNull(reportTarget(thread("t", { tags: [ORIGIN], parentId: "p" }), ["slack:"]));
     assert.isNull(reportTarget(thread("t"), ["slack:"]));
+  });
+
+  it("lets channel_say reach another conversation only when the user asked from it", () => {
+    const asked = new Set(["slack:C2:2.0"]);
+    assert.strictEqual(
+      sayTarget({ own: ORIGIN, conversation: undefined, askedFrom: asked }),
+      ORIGIN,
+    );
+    assert.strictEqual(
+      sayTarget({ own: ORIGIN, conversation: ORIGIN, askedFrom: undefined }),
+      ORIGIN,
+    );
+    assert.strictEqual(
+      sayTarget({ own: ORIGIN, conversation: "slack:C2:2.0", askedFrom: asked }),
+      "slack:C2:2.0",
+    );
+    assert.isNull(sayTarget({ own: ORIGIN, conversation: "slack:C9:9.0", askedFrom: asked }));
+    assert.isNull(sayTarget({ own: ORIGIN, conversation: "slack:C2:2.0", askedFrom: undefined }));
   });
 
   it("posts a run's answer, or how it ended without one", () => {

@@ -46,6 +46,19 @@ export function tasksFrom(
   );
 }
 
+/**
+ * Where a task's channel_say posts: its own conversation, or another one only when the user asked
+ * it from there, so nothing a task read can send it to post somewhere new. Null when refused.
+ */
+export function sayTarget(input: {
+  readonly own: string;
+  readonly conversation: string | undefined;
+  readonly askedFrom: ReadonlySet<string> | undefined;
+}): string | null {
+  if (input.conversation === undefined || input.conversation === input.own) return input.own;
+  return input.askedFrom?.has(input.conversation) === true ? input.conversation : null;
+}
+
 /** The user's request that is only "stop": it stops the conversation's tasks, without the router. */
 export function isStop(message: ChannelMessage): boolean {
   return message.fromUser && message.direct && /^stop[.!]*$/iu.test(message.text.trim());

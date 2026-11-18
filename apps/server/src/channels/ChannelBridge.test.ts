@@ -69,6 +69,8 @@ function runBridge(input: {
   readonly state?: ChannelBridge.BridgeState;
   /** The images the channel serves, by source; any other fails to fetch. */
   readonly images?: Record<string, Uint8Array>;
+  /** Runs whose task posts with channel_say in a conversation, as their first item arrives. */
+  readonly onSay?: Record<string, string>;
 }) {
   const posts: Array<{ ref: string; text: string }> = [];
   const sent: Array<{ threadId: string; text: string; attachments: ReadonlyArray<unknown> }> = [];
@@ -118,8 +120,19 @@ function runBridge(input: {
     dispatch: (command: Record<string, unknown>) =>
       Effect.sync(() => void dispatched.push(command)),
   } as never;
-  const engine = { streamDomainEvents: Stream.fromIterable(input.events ?? []) } as never;
   const state = input.state ?? ChannelBridge.makeState();
+  const engine = {
+    streamDomainEvents: Stream.fromIterable(input.events ?? []).pipe(
+      Stream.tap((event) =>
+        Effect.sync(() => {
+          const said = event.runId === undefined ? undefined : input.onSay?.[event.runId];
+          if (event.type === "turn-item.updated" && said !== undefined) {
+            ChannelBridge.noteSaid(state, event.threadId, said);
+          }
+        }),
+      ),
+    ),
+  } as never;
   const saveImages = (
     threadId: string,
     _messageId: string,
@@ -186,6 +199,40 @@ describe("ChannelBridge", () => {
           [ORIGIN, "idle"],
         ]);
       }),
+  );
+
+  it.effect("answers a message asked from another conversation there, once", () =>
+    Effect.gen(function* () {
+      const elsewhere = "slack:C2:1700000000.000200";
+      const state = ChannelBridge.makeState();
+      state.answerIn.set("route:task:2", elsewhere);
+      state.answerIn.set("route:task:3", elsewhere);
+      const { posts } = yield* runBridge({
+        state,
+        existing: [task],
+        events: [
+          runEvent("run.created", "running", "run:2", "task", "route:task:2"),
+          itemEvent(
+            { type: "assistant_message", text: "Isolation is done.", streaming: false },
+            "run:2",
+          ),
+          runEvent("run.updated", "completed", "run:2", "task", "route:task:2"),
+          // The task already answered there with channel_say, so its final message is not repeated.
+          runEvent("run.created", "running", "run:3", "task", "route:task:3"),
+          itemEvent({ type: "assistant_message", text: "Said it.", streaming: false }, "run:3"),
+          runEvent("run.updated", "completed", "run:3", "task", "route:task:3"),
+          // Its own conversation still gets everything else.
+          runEvent("run.created", "running", "run:4"),
+          itemEvent({ type: "assistant_message", text: "Merged.", streaming: false }, "run:4"),
+          runEvent("run.updated", "completed", "run:4"),
+        ],
+        onSay: { "run:3": elsewhere },
+      });
+      assert.deepStrictEqual(posts, [
+        { ref: elsewhere, text: "Isolation is done." },
+        { ref: ORIGIN, text: "Merged." },
+      ]);
+    }),
   );
 
   it.effect("leaves a task's delegate_task children to it, and posts once they finish", () =>

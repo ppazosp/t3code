@@ -93,12 +93,21 @@ export interface BridgeState {
   readonly waiting: Map<string, Array<string>>;
   /** Conversations the router proposed work for since the user last wrote: that is the answer. */
   readonly proposed: Set<string>;
+  /** Messages routed to a task from another conversation than its own, and where they came from. */
+  readonly answerIn: Map<string, string>;
+  /** The other conversations the user asked each task from: it may post there too. */
+  readonly askedFrom: Map<string, Set<string>>;
+  /** Where each task posted outside its own conversation during its current run. */
+  readonly saidIn: Map<string, Set<string>>;
 }
 
 export const makeState = (): BridgeState => ({
   userRefs: new Set(),
   waiting: new Map(),
   proposed: new Set(),
+  answerIn: new Map(),
+  askedFrom: new Map(),
+  saidIn: new Map(),
 });
 
 const remember = <K, V>(map: Map<K, V>, key: K, value: V) => {
@@ -106,6 +115,13 @@ const remember = <K, V>(map: Map<K, V>, key: K, value: V) => {
   map.set(key, value);
   if (map.size > LIMIT) map.delete(map.keys().next().value!);
 };
+
+/** Records that a task posted in a conversation other than its own during its current run. */
+export function noteSaid(state: BridgeState, threadId: string, ref: string): void {
+  const said = state.saidIn.get(threadId) ?? new Set<string>();
+  said.add(ref);
+  remember(state.saidIn, threadId, said);
+}
 
 /** Marks the user's waiting requests in a conversation as handled, once something answered them. */
 export const markHandled = Effect.fn("ChannelBridge.markHandled")(function* (
@@ -144,6 +160,8 @@ export const OUTSIDER_NOTE =
 interface RunReport {
   readonly adapter: ChannelAdapter;
   readonly ref: string;
+  /** The run answers a message the user asked from another conversation than the task's own. */
+  readonly elsewhere: boolean;
   readonly threadId: string;
   result: string | null;
   plan: string | null;
@@ -184,6 +202,8 @@ export const run = Effect.fn("ChannelBridge.run")(function* (input: {
   const reports = new Map<string, RunReport>();
   // The run each thread is on, so a worker tagged after its run started is still reported.
   const activeRuns = new Map<string, string>();
+  // The message that started each active run, which says where an elsewhere answer goes.
+  const runMessages = new Map<string, string>();
   // The message each task last read up to in its conversation.
   const lastRead = new Map<string, string>();
 
@@ -384,10 +404,19 @@ export const run = Effect.fn("ChannelBridge.run")(function* (input: {
     runId: string,
   ) {
     if (reports.has(runId)) return;
-    const ref = reportTarget(thread, prefixes);
+    const own = reportTarget(thread, prefixes);
+    const asked = state.answerIn.get(runMessages.get(runId) ?? "");
+    const ref = own === null ? null : (asked ?? own);
     const adapter = ref === null ? undefined : adapterFor(ref);
     if (ref === null || adapter === undefined) return;
-    reports.set(runId, { adapter, ref, threadId: thread.id, result: null, plan: null });
+    reports.set(runId, {
+      adapter,
+      ref,
+      elsewhere: asked !== undefined,
+      threadId: thread.id,
+      result: null,
+      plan: null,
+    });
     // The task says in its own words that it started, if it will take a while.
     yield* setStatus(adapter, ref, "working");
   });
@@ -406,6 +435,7 @@ export const run = Effect.fn("ChannelBridge.run")(function* (input: {
         return;
       }
       activeRuns.set(runRecord.threadId, runRecord.id);
+      remember(runMessages, runRecord.id, runRecord.userMessageId);
       const thread = known.get(runRecord.threadId);
       if (thread !== undefined) yield* startReport(thread, runRecord.id);
       return;
@@ -414,11 +444,16 @@ export const run = Effect.fn("ChannelBridge.run")(function* (input: {
     if (outcome === undefined) return;
     reports.delete(runRecord.id);
     activeRuns.delete(runRecord.threadId);
+    runMessages.delete(runRecord.id);
+    const saidThere = state.saidIn.get(runRecord.threadId)?.has(report.ref) === true;
+    state.saidIn.delete(runRecord.threadId);
     // A turn that ends to wait for its children is not an answer: it reports once they finish.
     if (outcome === "completed" && childrenRunning(runRecord.threadId)) return;
     // A plan is what a planning run ends with; it goes out like any answer, for the user to answer.
     const text = resultText(outcome, report.plan ?? report.result);
-    const quiet = outcome === "completed" && isPullRequestWake(runRecord);
+    // Asked from another conversation, a task that answered there with channel_say is not repeated.
+    const quiet =
+      outcome === "completed" && (isPullRequestWake(runRecord) || (report.elsewhere && saidThere));
     if (text !== null && !quiet) yield* report.adapter.post(report.ref, { text });
     const waitsForUser =
       outcome === "completed" && known.get(runRecord.threadId)?.interactionMode === "plan";

@@ -36,6 +36,12 @@ const ChannelSayTool = Tool.make("channel_say", {
         description: "Paths of images or videos in your working folder, at most 10.",
       }),
     ),
+    conversation: Schema.optional(
+      Schema.String.annotate({
+        description:
+          "Only to answer the user in another conversation they asked you from, as the router's message names it. Leave it out to post in your own.",
+      }),
+    ),
   }),
   success: Schema.Struct({ posted: Schema.Literal(true) }),
   failure: OrchestratorMcpFailure,
