@@ -1,3 +1,4 @@
+/* oxlint-disable t3code/no-untranslated-copy -- super-t3: this fork's router screens are English only. */
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/models";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";

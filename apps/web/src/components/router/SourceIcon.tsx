@@ -1,3 +1,4 @@
+/* oxlint-disable t3code/no-untranslated-copy -- super-t3: this fork's router screens are English only. */
 import { BotIcon, MessageSquareIcon } from "lucide-react";
 
 import { SlackIcon } from "../Icons";

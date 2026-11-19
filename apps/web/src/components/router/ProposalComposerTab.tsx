@@ -1,3 +1,4 @@
+/* oxlint-disable t3code/no-untranslated-copy -- super-t3: this fork's router screens are English only. */
 import { readProposalSource, type EnvironmentId, type ScheduledTask } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { LightbulbIcon, XIcon } from "lucide-react";

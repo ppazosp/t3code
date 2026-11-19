@@ -1,3 +1,4 @@
+/* oxlint-disable t3code/no-untranslated-copy -- super-t3: this fork's router screens are English only. */
 import { useAtomValue } from "@effect/atom-react";
 import { readProposalSource, type EnvironmentId, type ScheduledTask } from "@t3tools/contracts";
 import { FolderIcon, FolderTreeIcon, LightbulbIcon, XIcon } from "lucide-react";
