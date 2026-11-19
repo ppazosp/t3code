@@ -10,8 +10,11 @@ import type { ChannelMessage } from "../Channel.ts";
 export interface SlackSettings {
   readonly botToken: string;
   readonly appToken: string;
-  /** The Slack member whose DMs and mentions are requests from the user of this T3. */
-  readonly trustedUserId: string;
+  /**
+   * The Slack members whose DMs and mentions are requests from the user of this T3: the user, and
+   * any teammate they trust to direct it with all the access its agents have.
+   */
+  readonly trustedUserIds: ReadonlySet<string>;
   /**
    * Channels whose messages the router reads to propose work, without a mention: these, or `all`,
    * every channel the bot is in.
@@ -98,7 +101,7 @@ const decodeEvent = Schema.decodeUnknownOption(SlackMessageEvent);
  */
 export function readSlackMessage(
   payload: unknown,
-  settings: Pick<SlackSettings, "trustedUserId" | "watchedChannels">,
+  settings: Pick<SlackSettings, "trustedUserIds" | "watchedChannels">,
   self: SlackSelf,
 ): Option.Option<ChannelMessage> {
   return Option.flatMap(decodePayload(payload), ({ event }) =>
@@ -119,7 +122,8 @@ export function readSlackMessage(
         return Option.none();
       }
       const text = (message.text ?? "").trim();
-      const fromUser = !bot && message.user === settings.trustedUserId;
+      const fromUser =
+        !bot && message.user !== undefined && settings.trustedUserIds.has(message.user);
       const isDm = message.channel_type === "im";
       const mentionsBot = message.type === "app_mention" || text.includes(`<@${self.userId}>`);
       const watched =
@@ -156,7 +160,7 @@ export function readSlackMessage(
  */
 export function readSlackOutsider(
   payload: unknown,
-  settings: Pick<SlackSettings, "trustedUserId">,
+  settings: Pick<SlackSettings, "trustedUserIds">,
   botUserId: string,
 ): string | null {
   const event = Option.flatMap(decodePayload(payload), ({ event }) => decodeEvent(event));
@@ -168,7 +172,7 @@ export function readSlackOutsider(
     message.subtype !== undefined ||
     message.user === undefined ||
     message.user === botUserId ||
-    message.user === settings.trustedUserId
+    settings.trustedUserIds.has(message.user)
   ) {
     return null;
   }
@@ -189,15 +193,16 @@ const decodeStopped = Schema.decodeUnknownOption(AgentSessionStopped);
 /** The Stop button of Slack's agent panel, pressed while T3 worked on that conversation. */
 export function readSlackStop(
   payload: unknown,
-  trustedUserId: string,
+  settings: Pick<SlackSettings, "trustedUserIds">,
 ): { readonly ref: string; readonly fromUser: boolean } | null {
   const stopped = Option.flatMap(decodePayload(payload), ({ event }) => decodeStopped(event));
   if (Option.isNone(stopped)) return null;
   const channel = stopped.value.channel ?? stopped.value.channel_id;
   if (channel === undefined) return null;
+  const user = stopped.value.user ?? stopped.value.user_id;
   return {
     ref: `slack:${channel}:${stopped.value.thread_ts}`,
-    fromUser: (stopped.value.user ?? stopped.value.user_id) === trustedUserId,
+    fromUser: user !== undefined && settings.trustedUserIds.has(user),
   };
 }
 
@@ -241,15 +246,16 @@ export const plainLinks = (text: string) =>
 
 export const slackMarkdownFits = (text: string) => slackMarkdown(text).length <= MARKDOWN_LIMIT;
 
-function watchedChannelsOf(value: string): ReadonlySet<string> | "all" {
-  if (value.trim().toLowerCase() === "all") return "all";
-  return new Set(
+const listOf = (value: string): ReadonlySet<string> =>
+  new Set(
     value
       .split(",")
-      .map((channel) => channel.trim())
-      .filter((channel) => channel !== ""),
+      .map((item) => item.trim())
+      .filter((item) => item !== ""),
   );
-}
+
+const watchedChannelsOf = (value: string): ReadonlySet<string> | "all" =>
+  value.trim().toLowerCase() === "all" ? "all" : listOf(value);
 
 export function readSlackSettings(env: {
   readonly botToken: Option.Option<string>;
@@ -263,8 +269,9 @@ export function readSlackSettings(env: {
     appToken: env.appToken,
     trustedUserId: env.trustedUserId,
   }).pipe(
-    Option.map((required) => ({
+    Option.map(({ trustedUserId, ...required }) => ({
       ...required,
+      trustedUserIds: listOf(trustedUserId),
       watchedChannels: watchedChannelsOf(Option.getOrElse(env.watchedChannels, () => "")),
       apiUrl: Option.getOrElse(env.apiUrl, () => SLACK_API_URL).replace(/\/+$/u, ""),
     })),

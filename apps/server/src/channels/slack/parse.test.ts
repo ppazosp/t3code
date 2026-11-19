@@ -11,7 +11,11 @@ import {
   slackMarkdown,
 } from "./parse.ts";
 
-const settings = { trustedUserId: "UME", watchedChannels: new Set(["CWATCH"]) };
+// UTEAM is a teammate the user trusts to direct T3 as they do.
+const settings = {
+  trustedUserIds: new Set(["UME", "UTEAM"]),
+  watchedChannels: new Set(["CWATCH"]),
+};
 const BOT = "UBOT";
 const SELF = { userId: BOT, botId: "BSELF" };
 
@@ -25,18 +29,19 @@ const read = (event: Record<string, unknown>) =>
 
 describe("readSlackSettings", () => {
   it("watches the listed channels, or every channel the bot is in with all", () => {
-    const watched = (value: string) =>
+    const read = (trusted: string, watched: string) =>
       Option.getOrThrow(
         readSlackSettings({
           botToken: Option.some("xoxb"),
           appToken: Option.some("xapp"),
-          trustedUserId: Option.some("UME"),
-          watchedChannels: Option.some(value),
+          trustedUserId: Option.some(trusted),
+          watchedChannels: Option.some(watched),
           apiUrl: Option.none(),
         }),
-      ).watchedChannels;
-    assert.strictEqual(watched(" All "), "all");
-    assert.deepStrictEqual(watched("C1, C2,"), new Set(["C1", "C2"]));
+      );
+    assert.strictEqual(read("UME", " All ").watchedChannels, "all");
+    assert.deepStrictEqual(read("UME", "C1, C2,").watchedChannels, new Set(["C1", "C2"]));
+    assert.deepStrictEqual(read("UME, UTEAM,", "").trustedUserIds, new Set(["UME", "UTEAM"]));
   });
 });
 
@@ -52,6 +57,12 @@ describe("readSlackMessage", () => {
       text: "hello",
     });
     assert.isNull(read({ channel: "D2", channel_type: "im", user: "USOMEONE" }));
+    // A trusted teammate directs T3 as the user does.
+    assert.include(read({ channel: "D3", channel_type: "im", user: "UTEAM" }), {
+      fromUser: true,
+      direct: true,
+      author: "you",
+    });
   });
 
   it("reads every person in a watched channel, and only the user's mentions elsewhere", () => {
@@ -87,13 +98,14 @@ describe("readSlackMessage", () => {
       readSlackOutsider(payload({ channel_type: "im", channel: "D2", ...event }), settings, BOT);
     assert.strictEqual(outsider({ user: "UX", thread_ts: "1.5" }), "slack:D2:1.5");
     assert.isNull(outsider({ user: "UME" }));
+    assert.isNull(outsider({ user: "UTEAM" }));
     assert.isNull(outsider({ user: "UX", bot_id: "B1" }));
     assert.isNull(readSlackOutsider(payload({ channel: "C1", user: "UX" }), settings, BOT));
   });
 
   it("reads the agent panel's Stop button, with either spelling of its fields", () => {
     const stopped = (event: Record<string, unknown>) =>
-      readSlackStop({ event: { type: "agent_session_stopped", ...event } }, "UME");
+      readSlackStop({ event: { type: "agent_session_stopped", ...event } }, settings);
     assert.deepStrictEqual(stopped({ channel: "D1", thread_ts: "1.1", user: "UME" }), {
       ref: "slack:D1:1.1",
       fromUser: true,
@@ -102,6 +114,7 @@ describe("readSlackMessage", () => {
       ref: "slack:D1:1.1",
       fromUser: false,
     });
+    assert.include(stopped({ channel: "D1", thread_ts: "1.1", user: "UTEAM" }), { fromUser: true });
     assert.isNull(stopped({ thread_ts: "1.1" }));
   });
 

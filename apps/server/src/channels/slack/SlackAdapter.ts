@@ -279,7 +279,7 @@ export const make = Effect.fn("SlackAdapter.make")(function* (settings: SlackSet
           }
           if (envelope.value.type === "disconnect") return;
           if (envelope.value.type !== "events_api") continue;
-          const stop = readSlackStop(envelope.value.payload, settings.trustedUserId);
+          const stop = readSlackStop(envelope.value.payload, settings);
           if (stop !== null) {
             yield* Queue.offer(inbox, { type: "stop", ...stop });
             continue;
@@ -326,7 +326,10 @@ export const make = Effect.fn("SlackAdapter.make")(function* (settings: SlackSet
       });
       const page = yield* call(`conversations.replies?${query.toString()}`, undefined, Replies);
       for (const message of page.messages) {
-        const fromUser = message.bot_id === undefined && message.user === settings.trustedUserId;
+        const fromUser =
+          message.bot_id === undefined &&
+          message.user !== undefined &&
+          settings.trustedUserIds.has(message.user);
         const author =
           message.bot_id !== undefined || message.user === undefined
             ? "a bot"

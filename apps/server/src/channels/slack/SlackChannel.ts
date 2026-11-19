@@ -6,7 +6,8 @@ import * as SlackAdapter from "./SlackAdapter.ts";
 
 /**
  * Slack, configured by environment variables so the settings schema stays upstream's. It is on
- * when the bot token, the app token and the user's Slack ID are set.
+ * when the bot token, the app token and the user's Slack ID are set. T3_SLACK_TRUSTED_USER_ID
+ * takes several IDs, comma-separated, to let teammates direct T3 as the user does.
  */
 export const slackChannel: ChannelDefinition<SlackSettings> = {
   name: "slack",
