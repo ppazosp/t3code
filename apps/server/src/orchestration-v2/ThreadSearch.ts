@@ -79,6 +79,8 @@ const SearchRequest = Schema.Struct({
   projectId: Schema.NullOr(ProjectId),
   /** Threads the caller already lists, left out before the hit limit. */
   excludedThreadIds: TokenList,
+  /** Archived threads count too, for an agent looking for past work. */
+  includeArchived: Schema.optional(Schema.Boolean),
 });
 const SearchRow = Schema.Struct({
   messageRowid: Schema.Number,
@@ -219,7 +221,14 @@ export function buildSearchSnippet(text: string, matchStart: number): string {
 // accented queries and non-Latin case can still miss: "fermée"/"fermee", "ОШИБКА"/"ошибка".
 export const messageHitsQuery = (
   sql: SqlClient.SqlClient,
-  { match, substrings, shortSpellings, projectId, excludedThreadIds }: typeof SearchRequest.Encoded,
+  {
+    match,
+    substrings,
+    shortSpellings,
+    projectId,
+    excludedThreadIds,
+    includeArchived,
+  }: typeof SearchRequest.Encoded,
 ) => sql`
     WITH eligible AS MATERIALIZED (
       SELECT threads.thread_id, threads.project_id
@@ -227,7 +236,7 @@ export const messageHitsQuery = (
       INNER JOIN projection_projects AS projects
         ON projects.project_id = threads.project_id
       WHERE threads.deleted_at IS NULL
-        AND threads.archived_at IS NULL
+        ${includeArchived === true ? sql`` : sql`AND threads.archived_at IS NULL`}
         AND projects.deleted_at IS NULL
         AND (${projectId} IS NULL OR threads.project_id = ${projectId})
         AND threads.thread_id NOT IN (SELECT value FROM json_each(${excludedThreadIds}))
@@ -348,7 +357,11 @@ export class ThreadSearch extends Context.Service<
      * palette ranks them, then message matches for the remaining threads.
      */
     readonly searchThreads: (
-      input: OrchestrationSearchThreadsInput & { readonly projectId?: ProjectId | undefined },
+      input: OrchestrationSearchThreadsInput & {
+        readonly projectId?: ProjectId | undefined;
+        /** Archived threads count too. */
+        readonly includeArchived?: boolean | undefined;
+      },
     ) => Effect.Effect<{ readonly matches: ReadonlyArray<ThreadSearchHit> }, ThreadSearchError>;
     /**
      * The settled threads before `before` that clients omitting older settled threads should
@@ -408,9 +421,12 @@ export const make = Effect.gen(function* () {
   });
 
   const titleCandidates = SqlSchema.findAll({
-    Request: Schema.Struct({ projectId: Schema.NullOr(ProjectId) }),
+    Request: Schema.Struct({
+      projectId: Schema.NullOr(ProjectId),
+      includeArchived: Schema.Boolean,
+    }),
     Result: TitleCandidateRow,
-    execute: ({ projectId }) => sql`
+    execute: ({ projectId, includeArchived }) => sql`
       SELECT
         threads.payload_json AS thread,
         projects.title AS "projectTitle",
@@ -419,7 +435,7 @@ export const make = Effect.gen(function* () {
       INNER JOIN projection_projects AS projects
         ON projects.project_id = threads.project_id
       WHERE threads.deleted_at IS NULL
-        AND threads.archived_at IS NULL
+        ${includeArchived ? sql`` : sql`AND threads.archived_at IS NULL`}
         AND projects.deleted_at IS NULL
         AND json_extract(threads.payload_json, '$.lineage.relationshipToParent')
           IS NOT 'subagent'
@@ -506,6 +522,7 @@ export const make = Effect.gen(function* () {
       readonly excludedThreadIds?: ReadonlySet<ThreadId>;
       /** Off for an agent's search, which has no use for the user's picks. */
       readonly picks?: boolean;
+      readonly includeArchived?: boolean;
     },
   ) {
     // One message per thread: the best word match, then what the user wrote,
@@ -537,6 +554,7 @@ export const make = Effect.gen(function* () {
               ...messageSearch,
               projectId: input.projectId,
               excludedThreadIds: [...(input.excludedThreadIds ?? [])],
+              includeArchived: input.includeArchived === true,
             });
       }),
     );
@@ -611,7 +629,10 @@ export const make = Effect.gen(function* () {
     const now = DateTime.toEpochMillis(yield* DateTime.now);
     // Agents call this rarely, and a project has hundreds of threads, not
     // millions, so ranking every active thread in memory stays cheap.
-    const candidates = yield* read(titleCandidates({ projectId: input.projectId ?? null }));
+    const includeArchived = input.includeArchived === true;
+    const candidates = yield* read(
+      titleCandidates({ projectId: input.projectId ?? null, includeArchived }),
+    );
     const subjectById = new Map(
       candidates.map((row): [ThreadId, ThreadSearchSubject] => [
         row.thread.id,
@@ -650,6 +671,7 @@ export const make = Effect.gen(function* () {
       projectId: input.projectId ?? null,
       excludedThreadIds: shown,
       picks: false,
+      includeArchived,
     });
     const messageHits = matches
       .filter((match) => subjectById.has(match.threadId))

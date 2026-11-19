@@ -21,6 +21,7 @@ import {
   type ScheduledTaskId,
   TextGenerationError,
   ThreadId,
+  type ThreadTag,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
@@ -99,6 +100,8 @@ export interface ThreadLaunchInput {
   readonly runtimeMode: RuntimeMode;
   readonly interactionMode: ProviderInteractionMode;
   readonly workspaceStrategy: ThreadLaunchWorkspaceStrategy;
+  /** Set before the first turn starts, so that turn already sees them. */
+  readonly tags?: ReadonlyArray<ThreadTag>;
   readonly initialMessage?: ThreadLaunchInitialMessage;
   readonly importedNativeThread?: {
     readonly ref: {
@@ -1409,6 +1412,17 @@ const make = Effect.gen(function* () {
         let runId: RunId | null = null;
         let messageSequence: number | undefined;
         let messageWasAlreadyAccepted = false;
+        for (const tag of input.tags ?? []) {
+          yield* threads
+            .dispatch({
+              type: "thread.tag.set",
+              commandId: CommandId.make(`${input.commandId}:tag:${tag}`),
+              threadId,
+              tag,
+              tagged: true,
+            })
+            .pipe(Effect.mapError(mapError(input, "dispatch-message", threadId)));
+        }
         if (initialMessage !== undefined) {
           // A new thread's claim carries its first message. A reused thread, or a replayed
           // claim that carried none, takes it in a command of its own.

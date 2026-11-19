@@ -28,6 +28,7 @@ import {
   ScheduledTaskId,
   type ServerProvider,
   ThreadId,
+  ThreadTag,
   TextGenerationError,
   ServerSettingsError,
   VcsProcessExitError,
@@ -835,12 +836,15 @@ it.effect("arms durable title generation after accepting the first message", () 
         }),
         title: "Generate my title",
         generateTitle: true,
+        // Tagged before the first message, so its turn already sees the tag.
+        tags: [ThreadTag.make("accepted:task-1")],
       };
       const launched = yield* launches.launch(input);
       const generationCommandId = input.commandId;
 
       const projection = yield* threads.getThreadProjection(launched.threadId);
       assert.equal(projection.thread.title, "Generate my title");
+      assert.deepEqual(projection.thread.tags, ["accepted:task-1"]);
       assert.equal(projection.thread.titleRegeneration?.requestId, generationCommandId);
       assert.deepEqual(
         (yield* outbox.listByCommandId(generationCommandId)).map((effect) => effect.request),

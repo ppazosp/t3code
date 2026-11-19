@@ -25,6 +25,7 @@ import {
   type DraftSessionState,
 } from "../../composerDraftStore";
 import { draftPenClassName, draftSurfaceClassName } from "./SidebarThreadRow";
+import { isProposalDraft } from "../router/proposalDrafts";
 
 const SidebarDraftRow = memo(function SidebarDraftRow(props: {
   draftId: DraftId;
@@ -193,7 +194,8 @@ export const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
   const drafts = (() => {
     const rows: SidebarDraftRowData[] = [];
     for (const [draftKey, session] of Object.entries(draftThreadsByThreadKey)) {
-      if (session.promotedTo != null) {
+      // super-t3: a proposal's draft is listed under Proposals instead.
+      if (session.promotedTo != null || isProposalDraft(draftKey)) {
         continue;
       }
       if (

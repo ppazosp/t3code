@@ -92,6 +92,10 @@ import {
   DeviceStandardToolkit,
 } from "./toolkits/device/tools.ts";
 import * as HtmlHandlers from "./toolkits/html/handlers.ts";
+import * as ChannelsHandlers from "./toolkits/channels/handlers.ts";
+import { ChannelsToolkit } from "./toolkits/channels/tools.ts";
+import * as RouterHandlers from "./toolkits/router/handlers.ts";
+import { RouterToolkit } from "./toolkits/router/tools.ts";
 import { MessageToolkit } from "./toolkits/message/tools.ts";
 import * as MessageHandlers from "./toolkits/message/handlers.ts";
 import { HtmlPreviewTool, HtmlPreviewToolkit, HtmlRenderToolkit } from "./toolkits/html/tools.ts";
@@ -1415,6 +1419,8 @@ export const layerTools = Layer.mergeAll(
   layerIssuesToolkit,
   layerDeviceToolkit,
   layerHtmlToolkit,
+  toolkitRegistration(ChannelsToolkit, ChannelsHandlers.layer),
+  toolkitRegistration(RouterToolkit, RouterHandlers.layer),
   layerMessageToolkit,
 );
 

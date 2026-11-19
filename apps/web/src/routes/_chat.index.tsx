@@ -6,6 +6,7 @@ import { T, useGT } from "gt-react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { isElectron } from "../env";
+import { RouterHome } from "../components/router/RouterHome";
 import { NoProjectsHero } from "../components/NoProjectsHero";
 import { sortScopedProjectsForSidebar } from "../components/Sidebar.logic";
 import { Button } from "../components/ui/button";
@@ -31,7 +32,12 @@ function ChatIndexRouteView() {
     if (environments.length === 0) return <HostedEmptyState />;
   }
 
-  return <IndexDraftLanding />;
+  // super-t3: home is the router; T3's draft landing shows only before projects exist.
+  return (
+    <RouterHome>
+      <IndexDraftLanding />
+    </RouterHome>
+  );
 }
 
 function IndexDraftLanding() {

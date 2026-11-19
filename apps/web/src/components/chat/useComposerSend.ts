@@ -20,6 +20,7 @@ import {
 } from "../ChatView.logic";
 import { isUsageLimitsCommand } from "@t3tools/shared/usageLimits";
 import {
+  ACCEPTED_TAG_PREFIX,
   AuthOrchestrationOperateScope,
   DEFAULT_MODEL,
   type EnvironmentId,
@@ -29,6 +30,7 @@ import {
   type ScopedThreadRef,
   type ThreadContextRecord,
   type ThreadId,
+  type ThreadTag,
   ProviderInteractionMode,
   RuntimeMode,
 } from "@t3tools/contracts";
@@ -151,6 +153,7 @@ import type { useQueuedRunEdit } from "./useQueuedRunEdit";
 import type { useTimelineFollow } from "./useTimelineFollow";
 import type { useUsageLimitsPanel } from "./useUsageLimitsPanel";
 import type { useWorktreeSetup } from "./useWorktreeSetup";
+import { readProposalDrafts } from "../router/proposalDrafts";
 
 const ENVIRONMENT_UNAVAILABLE_SEND_TOAST_TRAIL_SIZE = 3;
 
@@ -1436,9 +1439,19 @@ export function useComposerSend(input: ComposerSendInput) {
     let backgroundDraftOpened = false;
     let turnStartSucceeded = false;
     if (failure === null && turnAttachmentsResult._tag === "Success") {
+      const proposalTaskId =
+        isLocalDraftThread && draftId !== null ? readProposalDrafts()[draftId]?.taskId : undefined;
+      // super-t3: a router proposal that asked for a plan starts its worker in plan mode.
+      const sendInteractionMode =
+        proposalTaskId !== undefined && draftThread?.interactionMode === "plan"
+          ? "plan"
+          : DEFAULT_INTERACTION_MODE;
       const bootstrap =
         isLocalDraftThread || baseBranchForWorktree
           ? {
+              ...(proposalTaskId === undefined
+                ? {}
+                : { tags: [`${ACCEPTED_TAG_PREFIX}${proposalTaskId}` as ThreadTag] }),
               ...(isLocalDraftThread
                 ? {
                     createThread: {
@@ -1446,7 +1459,7 @@ export function useComposerSend(input: ComposerSendInput) {
                       title,
                       modelSelection: threadCreateModelSelection,
                       runtimeMode,
-                      interactionMode: DEFAULT_INTERACTION_MODE,
+                      interactionMode: sendInteractionMode,
                       branch: activeThreadBranch,
                       worktreePath: activeThread.worktreePath,
                       createdAt: activeThread.createdAt,
@@ -1493,9 +1506,10 @@ export function useComposerSend(input: ComposerSendInput) {
             }),
           },
           modelSelection: ctxSelectedModelSelection,
-          titleSeed: title,
+          // A proposal's thread takes the proposal's title, which seeding would overwrite.
+          ...(proposalTaskId === undefined ? { titleSeed: title } : {}),
           runtimeMode,
-          interactionMode: DEFAULT_INTERACTION_MODE,
+          interactionMode: sendInteractionMode,
           dispatchMode: turnDispatchMode,
           ...(freshArm === undefined ? {} : { freshContext: true }),
           ...(bootstrap ? { bootstrap } : {}),

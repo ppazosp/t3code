@@ -26,6 +26,7 @@ import {
   type RuntimeMode,
   type RuntimeRequestId,
   type ThreadId,
+  type ThreadTag,
   type ThreadEnvMode,
   type UploadChatAttachment,
   type GuestMessageId,
@@ -114,6 +115,10 @@ export interface PinThreadInput extends ThreadCommandInput {
   readonly orderKey?: string;
 }
 export type UnpinThreadInput = ThreadCommandInput;
+export interface SetThreadTagInput extends ThreadCommandInput {
+  readonly tag: ThreadTag;
+  readonly tagged: boolean;
+}
 
 export interface ReorderPinnedThreadInput extends ThreadCommandInput {
   readonly orderKey: string;
@@ -178,6 +183,8 @@ interface StartThreadBootstrap {
     readonly startFromOrigin?: boolean;
   };
   readonly runSetupScript?: boolean;
+  /** Tags the new thread gets before its first turn starts. */
+  readonly tags?: ReadonlyArray<ThreadTag>;
 }
 
 export interface StartThreadTurnInput extends ThreadCommandInput {
@@ -628,6 +635,18 @@ export const unpinThread = Effect.fn("EnvironmentCommands.unpinThread")(function
   return yield* simpleThreadCommand("thread.unpin", input);
 });
 
+export const setThreadTag = Effect.fn("EnvironmentCommands.setThreadTag")(function* (
+  input: SetThreadTagInput,
+) {
+  return yield* dispatch({
+    type: "thread.tag.set",
+    commandId: yield* allocateCommandId(input),
+    threadId: input.threadId,
+    tag: input.tag,
+    tagged: input.tagged,
+  });
+});
+
 export const unsettleThread = Effect.fn("EnvironmentCommands.unsettleThread")(function* (
   input: UnsettleThreadInput,
 ) {
@@ -806,6 +825,7 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
       runtimeMode: input.runtimeMode,
       interactionMode: input.interactionMode,
       workspaceStrategy,
+      ...(input.bootstrap?.tags === undefined ? {} : { tags: input.bootstrap.tags }),
       initialMessage: {
         messageId: input.message.messageId,
         text: input.message.text,

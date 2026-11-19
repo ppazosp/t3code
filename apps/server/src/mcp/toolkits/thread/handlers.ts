@@ -24,6 +24,7 @@ import type * as ThreadManagement from "../../../orchestration-v2/ThreadManageme
 import * as ThreadSearch from "../../../orchestration-v2/ThreadSearch.ts";
 import * as ScheduledTasks from "../../../scheduledTasks/ScheduledTaskService.ts";
 import { queuedRunsInDeliveryOrder } from "../../../orchestration-v2/QueuedRunOrder.ts";
+import { isRouterThread } from "../../../router/RouterRuntimePolicy.ts";
 import { ThreadToolkit } from "./tools.ts";
 
 function queueEntry(
@@ -146,7 +147,13 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
       const scope = yield* McpInvocationContext.McpInvocationContext;
       const threadSearch = yield* ThreadSearch.ThreadSearch;
       const { matches } = yield* threadSearch
-        .searchThreads({ ...input, projectId: input.projectId ?? caller?.projectId })
+        .searchThreads({
+          ...input,
+          // The router works across projects; the one its thread sits in means nothing to it.
+          projectId:
+            input.projectId ??
+            (caller == null || isRouterThread(caller) ? undefined : caller.projectId),
+        })
         .pipe(Effect.mapError(unavailable));
       return {
         currentThreadId: scope.thread?.threadId ?? null,

@@ -49,6 +49,7 @@ import { isTerminalRunStatus } from "./ThreadManagementService.ts";
 import {
   combinePullRequestWatchWakes,
   evaluatePullRequestWatch,
+  MERGED_WAKE_MESSAGE_PREFIX,
   PULL_REQUEST_WATCH_NO_CHECKS_MS,
   pullRequestWatchEndMessage,
   pullRequestWatchMessage,
@@ -113,6 +114,8 @@ interface Wake {
   readonly text: string;
   readonly notification: OrchestrationV2Notification;
   readonly includesRemarks?: boolean;
+  /** Starts the woken message's id in place of the default. */
+  readonly messagePrefix?: string;
 }
 
 /** A wake a pass holds back so each thread gets one for everything the pass found. */
@@ -332,6 +335,11 @@ export const make = Effect.gen(function* () {
     number: link.number,
   });
 
+  const wakeWithId = ({ messagePrefix, ...wake }: Wake, uuid: string) => ({
+    ...wake,
+    messageId: MessageId.make(`${messagePrefix ?? "message:pr-watch:"}${uuid}`),
+  });
+
   /**
    * The orchestrator applies this only while the same watch is on, so a stop or restart
    * that lands during the host read wins.
@@ -352,9 +360,7 @@ export const make = Effect.gen(function* () {
       watch: next,
       ...checksPendingBeforeOf(target),
       ...(endedWatch === undefined ? {} : { endedWatch }),
-      ...(wake === undefined
-        ? {}
-        : { wake: { ...wake, messageId: MessageId.make(`message:pr-watch:${uuid}`) } }),
+      ...(wake === undefined ? {} : { wake: wakeWithId(wake, uuid) }),
     });
   });
 
@@ -510,7 +516,9 @@ export const make = Effect.gen(function* () {
           outcome: wake.notification.outcome,
           summary: wake.notification.summary,
         })),
-        messageId: MessageId.make(`message:pr-watch:${uuid}`),
+        messageId: MessageId.make(
+          `${items.find(({ wake }) => wake.messagePrefix !== undefined)?.wake.messagePrefix ?? "message:pr-watch:"}${uuid}`,
+        ),
       },
     });
     yield* Effect.forEach(
@@ -558,11 +566,15 @@ export const make = Effect.gen(function* () {
           groupKey,
           target,
           next: null,
-          wake: pullRequestWatchEndMessage({
-            number: target.link.number,
-            url: target.link.url,
-            detail,
-          }),
+          wake: {
+            ...pullRequestWatchEndMessage({
+              number: target.link.number,
+              url: target.link.url,
+              detail,
+            }),
+            // super-t3: a merge wake's answer reaches the thread's channel; other wakes stay quiet.
+            ...(reason === "merged" ? { messagePrefix: MERGED_WAKE_MESSAGE_PREFIX } : {}),
+          },
           reason,
         });
   };
