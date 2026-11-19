@@ -15,7 +15,8 @@ const connect = Effect.fn("test.connect")(function* (slack: MockSlack) {
   const adapter = yield* SlackAdapter.make({
     botToken: "xoxb-test",
     appToken: "xapp-test",
-    trustedUserIds: new Set(["UME"]),
+    trustedUserId: "UME",
+    guestUserIds: new Set<string>(),
     watchedChannels: new Set(["CWATCH"]),
     apiUrl: `${slack.url}/api`,
   });

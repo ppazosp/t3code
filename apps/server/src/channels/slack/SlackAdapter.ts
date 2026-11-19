@@ -21,6 +21,7 @@ import {
   readSlackMessage,
   readSlackOutsider,
   readSlackStop,
+  slackRole,
   slackMarkdownFits,
   SocketEnvelope,
   headerSafe,
@@ -326,16 +327,14 @@ export const make = Effect.fn("SlackAdapter.make")(function* (settings: SlackSet
       });
       const page = yield* call(`conversations.replies?${query.toString()}`, undefined, Replies);
       for (const message of page.messages) {
-        const fromUser =
-          message.bot_id === undefined &&
-          message.user !== undefined &&
-          settings.trustedUserIds.has(message.user);
+        const role = message.bot_id === undefined ? slackRole(settings, message.user) : null;
+        const fromUser = role !== null;
         const author =
           message.bot_id !== undefined || message.user === undefined
             ? "a bot"
-            : fromUser
+            : role === "user"
               ? "you"
-              : yield* personName(message.user);
+              : `${yield* personName(message.user)}${role === "guest" ? " (guest)" : ""}`;
         kept.push({
           id: `slack:${target.channel}:${message.ts}`,
           author,

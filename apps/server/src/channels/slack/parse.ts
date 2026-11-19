@@ -10,11 +10,10 @@ import type { ChannelMessage } from "../Channel.ts";
 export interface SlackSettings {
   readonly botToken: string;
   readonly appToken: string;
-  /**
-   * The Slack members whose DMs and mentions are requests from the user of this T3: the user, and
-   * any teammate they trust to direct it with all the access its agents have.
-   */
-  readonly trustedUserIds: ReadonlySet<string>;
+  /** The Slack member whose DMs and mentions are requests from the user of this T3. */
+  readonly trustedUserId: string;
+  /** Teammates the user lets direct T3 too, as guests: their DMs and mentions are requests. */
+  readonly guestUserIds: ReadonlySet<string>;
   /**
    * Channels whose messages the router reads to propose work, without a mention: these, or `all`,
    * every channel the bot is in.
@@ -101,7 +100,7 @@ const decodeEvent = Schema.decodeUnknownOption(SlackMessageEvent);
  */
 export function readSlackMessage(
   payload: unknown,
-  settings: Pick<SlackSettings, "trustedUserIds" | "watchedChannels">,
+  settings: Pick<SlackSettings, "trustedUserId" | "guestUserIds" | "watchedChannels">,
   self: SlackSelf,
 ): Option.Option<ChannelMessage> {
   return Option.flatMap(decodePayload(payload), ({ event }) =>
@@ -122,8 +121,8 @@ export function readSlackMessage(
         return Option.none();
       }
       const text = (message.text ?? "").trim();
-      const fromUser =
-        !bot && message.user !== undefined && settings.trustedUserIds.has(message.user);
+      const role = bot ? null : slackRole(settings, message.user);
+      const fromUser = role !== null;
       const isDm = message.channel_type === "im";
       const mentionsBot = message.type === "app_mention" || text.includes(`<@${self.userId}>`);
       const watched =
@@ -144,9 +143,10 @@ export function readSlackMessage(
         where: isDm ? "dm" : `#${message.channel}`,
         author: bot
           ? botAuthor(message.bot_profile?.name || message.username)
-          : fromUser
+          : role === "user"
             ? "you"
             : `@${message.user}`,
+        ...(role === "guest" ? { guest: true } : {}),
         text: text.replaceAll(`<@${self.userId}>`, "").trim(),
         ...(images.length > 0 ? { images } : {}),
       });
@@ -160,7 +160,7 @@ export function readSlackMessage(
  */
 export function readSlackOutsider(
   payload: unknown,
-  settings: Pick<SlackSettings, "trustedUserIds">,
+  settings: Pick<SlackSettings, "trustedUserId" | "guestUserIds">,
   botUserId: string,
 ): string | null {
   const event = Option.flatMap(decodePayload(payload), ({ event }) => decodeEvent(event));
@@ -172,7 +172,7 @@ export function readSlackOutsider(
     message.subtype !== undefined ||
     message.user === undefined ||
     message.user === botUserId ||
-    settings.trustedUserIds.has(message.user)
+    slackRole(settings, message.user) !== null
   ) {
     return null;
   }
@@ -193,16 +193,15 @@ const decodeStopped = Schema.decodeUnknownOption(AgentSessionStopped);
 /** The Stop button of Slack's agent panel, pressed while T3 worked on that conversation. */
 export function readSlackStop(
   payload: unknown,
-  settings: Pick<SlackSettings, "trustedUserIds">,
+  settings: Pick<SlackSettings, "trustedUserId" | "guestUserIds">,
 ): { readonly ref: string; readonly fromUser: boolean } | null {
   const stopped = Option.flatMap(decodePayload(payload), ({ event }) => decodeStopped(event));
   if (Option.isNone(stopped)) return null;
   const channel = stopped.value.channel ?? stopped.value.channel_id;
   if (channel === undefined) return null;
-  const user = stopped.value.user ?? stopped.value.user_id;
   return {
     ref: `slack:${channel}:${stopped.value.thread_ts}`,
-    fromUser: user !== undefined && settings.trustedUserIds.has(user),
+    fromUser: slackRole(settings, stopped.value.user ?? stopped.value.user_id) !== null,
   };
 }
 
@@ -257,10 +256,21 @@ const listOf = (value: string): ReadonlySet<string> =>
 const watchedChannelsOf = (value: string): ReadonlySet<string> | "all" =>
   value.trim().toLowerCase() === "all" ? "all" : listOf(value);
 
+/** Who a Slack member is to this T3: its user, a guest the user let in, or anyone else. */
+export function slackRole(
+  settings: Pick<SlackSettings, "trustedUserId" | "guestUserIds">,
+  user: string | undefined,
+): "user" | "guest" | null {
+  if (user === undefined) return null;
+  if (user === settings.trustedUserId) return "user";
+  return settings.guestUserIds.has(user) ? "guest" : null;
+}
+
 export function readSlackSettings(env: {
   readonly botToken: Option.Option<string>;
   readonly appToken: Option.Option<string>;
   readonly trustedUserId: Option.Option<string>;
+  readonly guestUserIds: Option.Option<string>;
   readonly watchedChannels: Option.Option<string>;
   readonly apiUrl: Option.Option<string>;
 }): Option.Option<SlackSettings> {
@@ -269,9 +279,10 @@ export function readSlackSettings(env: {
     appToken: env.appToken,
     trustedUserId: env.trustedUserId,
   }).pipe(
-    Option.map(({ trustedUserId, ...required }) => ({
+    Option.map((required) => ({
       ...required,
-      trustedUserIds: listOf(trustedUserId),
+      trustedUserId: required.trustedUserId.trim(),
+      guestUserIds: listOf(Option.getOrElse(env.guestUserIds, () => "")),
       watchedChannels: watchedChannelsOf(Option.getOrElse(env.watchedChannels, () => "")),
       apiUrl: Option.getOrElse(env.apiUrl, () => SLACK_API_URL).replace(/\/+$/u, ""),
     })),

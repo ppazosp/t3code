@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest";
-import { readChannelHeader } from "@t3tools/contracts";
+import { channelSourceLabels, readChannelHeader } from "@t3tools/contracts";
 
 import {
   isStop,
@@ -99,5 +99,16 @@ describe("bridge", () => {
     const passing = routerMessageText("slack", { ...reply, direct: false, text: "fyi" });
     assert.strictEqual(passing, `[slack #C1 from you ref=${ORIGIN}]\n> fyi`);
     assert.include(readChannelHeader(passing), { fromUser: true, direct: false });
+    // A guest's request is a request, marked as the guest's.
+    const guest = readChannelHeader(
+      routerMessageText("slack", { ...reply, author: "@Jorge (<@UJ>)", guest: true }),
+    );
+    assert.include(guest, { author: "@Jorge (<@UJ>)", fromUser: true, guest: true, direct: true });
+    assert.strictEqual(channelSourceLabels(guest!).author, "Jorge (<@UJ>) (guest)");
+    // A name cannot claim the mark: channels take < and > out of names.
+    assert.include(readChannelHeader(`[slack #C1 from @Bob guest to me ref=${ORIGIN}]\n> hi`), {
+      fromUser: false,
+      guest: false,
+    });
   });
 });

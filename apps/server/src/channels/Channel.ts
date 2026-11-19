@@ -27,6 +27,11 @@ export interface ChannelMessage {
   readonly direct: boolean;
   readonly where: string;
   readonly author: string;
+  /**
+   * Written by a guest: a teammate the user lets direct T3 too. Their messages are requests, but
+   * the user's own accounts and life stay the user's.
+   */
+  readonly guest?: boolean | undefined;
   readonly text: string;
   /** Images posted with the message, which the adapter fetches with `image`. */
   readonly images?: ReadonlyArray<ChannelImage> | undefined;

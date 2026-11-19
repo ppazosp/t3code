@@ -372,13 +372,15 @@ describe("ChannelBridge", () => {
           message("m5", { fromUser: false, direct: true, author: "@Ana" }),
           message("m4"),
           message("m6", { text: "and Ana's" }),
+          // A guest's tag reaches the task too, naming the guest.
+          message("m7", { author: "@Jorge", guest: true, text: "ship it" }),
         ],
       });
       assert.deepStrictEqual(
         sent.map((call) => call.threadId),
-        ["task", "task"],
+        ["task", "task", "task"],
       );
-      const [first, second] = sent.map((call) => call.text);
+      const [first, second, third] = sent.map((call) => call.text);
       assert.include(
         first,
         "The user tagged you in your Slack thread:\n> address Miguel's feedback",
@@ -389,11 +391,14 @@ describe("ChannelBridge", () => {
       assert.notInclude(first, "The export drops");
       // The second tag counts only what came after the first.
       assert.include(second, "1 other message came in there");
+      assert.include(third, "@Jorge, a guest, tagged you in your Slack thread:\n> ship it");
       assert.deepStrictEqual(marks, [
         ["m4", "seen"],
         ["m4", "done"],
         ["m6", "seen"],
         ["m6", "done"],
+        ["m7", "seen"],
+        ["m7", "done"],
       ]);
     }),
   );

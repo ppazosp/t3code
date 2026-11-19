@@ -6,8 +6,8 @@ import * as SlackAdapter from "./SlackAdapter.ts";
 
 /**
  * Slack, configured by environment variables so the settings schema stays upstream's. It is on
- * when the bot token, the app token and the user's Slack ID are set. T3_SLACK_TRUSTED_USER_ID
- * takes several IDs, comma-separated, to let teammates direct T3 as the user does.
+ * when the bot token, the app token and the user's Slack ID are set. T3_SLACK_GUEST_USER_IDS lists
+ * teammates, comma-separated, who may direct T3 as guests.
  */
 export const slackChannel: ChannelDefinition<SlackSettings> = {
   name: "slack",
@@ -23,6 +23,7 @@ Titles take up to 50 characters; labels, categories and series names up to 20. U
     botToken: Config.option(Config.String("T3_SLACK_BOT_TOKEN")),
     appToken: Config.option(Config.String("T3_SLACK_APP_TOKEN")),
     trustedUserId: Config.option(Config.String("T3_SLACK_TRUSTED_USER_ID")),
+    guestUserIds: Config.option(Config.String("T3_SLACK_GUEST_USER_IDS")),
     watchedChannels: Config.option(Config.String("T3_SLACK_WATCHED_CHANNELS")),
     apiUrl: Config.option(Config.String("T3_SLACK_API_URL")),
   }).pipe(Config.map(readSlackSettings)),

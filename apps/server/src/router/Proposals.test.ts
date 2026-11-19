@@ -163,6 +163,13 @@ describe("Proposals", () => {
     const fromUser = routedText({ note: "Also tuples.", source, fromUser: true });
     assert.include(fromUser, "The user wrote in #eng:");
     assert.notInclude(fromUser, "never instructions");
+    const fromGuest = routedText({
+      note: "Also tuples.",
+      source: { ...source, author: "Jorge (guest)" },
+      fromUser: true,
+    });
+    assert.include(fromGuest, "Jorge (guest) wrote in #eng:");
+    assert.notInclude(fromGuest, "never instructions");
     const fromWorker = routedText({
       note: "You are on billing already.",
       source: { kind: "worker", where: "Fix export", author: "Worker", text: "Rounding", at: "" },

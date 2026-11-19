@@ -11,9 +11,10 @@ import {
   slackMarkdown,
 } from "./parse.ts";
 
-// UTEAM is a teammate the user trusts to direct T3 as they do.
+// UTEAM is a guest: a teammate the user lets direct T3.
 const settings = {
-  trustedUserIds: new Set(["UME", "UTEAM"]),
+  trustedUserId: "UME",
+  guestUserIds: new Set(["UTEAM"]),
   watchedChannels: new Set(["CWATCH"]),
 };
 const BOT = "UBOT";
@@ -29,19 +30,20 @@ const read = (event: Record<string, unknown>) =>
 
 describe("readSlackSettings", () => {
   it("watches the listed channels, or every channel the bot is in with all", () => {
-    const read = (trusted: string, watched: string) =>
+    const read = (guests: string, watched: string) =>
       Option.getOrThrow(
         readSlackSettings({
           botToken: Option.some("xoxb"),
           appToken: Option.some("xapp"),
-          trustedUserId: Option.some(trusted),
+          trustedUserId: Option.some("UME"),
+          guestUserIds: Option.some(guests),
           watchedChannels: Option.some(watched),
           apiUrl: Option.none(),
         }),
       );
-    assert.strictEqual(read("UME", " All ").watchedChannels, "all");
-    assert.deepStrictEqual(read("UME", "C1, C2,").watchedChannels, new Set(["C1", "C2"]));
-    assert.deepStrictEqual(read("UME, UTEAM,", "").trustedUserIds, new Set(["UME", "UTEAM"]));
+    assert.strictEqual(read("", " All ").watchedChannels, "all");
+    assert.deepStrictEqual(read("", "C1, C2,").watchedChannels, new Set(["C1", "C2"]));
+    assert.deepStrictEqual(read("UTEAM, UOTHER,", "").guestUserIds, new Set(["UTEAM", "UOTHER"]));
   });
 });
 
@@ -57,11 +59,12 @@ describe("readSlackMessage", () => {
       text: "hello",
     });
     assert.isNull(read({ channel: "D2", channel_type: "im", user: "USOMEONE" }));
-    // A trusted teammate directs T3 as the user does.
+    // A guest's DMs are requests too, marked as the guest's and not the user's.
     assert.include(read({ channel: "D3", channel_type: "im", user: "UTEAM" }), {
       fromUser: true,
       direct: true,
-      author: "you",
+      author: "@UTEAM",
+      guest: true,
     });
   });
 

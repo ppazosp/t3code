@@ -80,6 +80,12 @@ export const FROM_USER_TAG = "from-you";
 /** On every thread a proposal became, so it gets WORKER.md for as long as it lives. */
 export const WORKER_TAG = "worker";
 
+/**
+ * Marks a guest's name in a channel header: a teammate the user lets direct T3. Channels take `<`
+ * and `>` out of names, so no one can name themselves a guest.
+ */
+export const GUEST_MARK = "<guest>";
+
 const CHANNEL_HEADER =
   /^\[([a-z][a-z0-9-]*) (\S+) from (.+?)( to me)? ref=(([a-z][a-z0-9-]*):[^\s\]]+)\]$/u;
 
@@ -90,7 +96,9 @@ export interface ChannelHeader {
   readonly where: string;
   readonly author: string;
   readonly ref: string;
+  /** The user or a guest wrote it: someone whose direct messages are requests. */
   readonly fromUser: boolean;
+  readonly guest: boolean;
   /** Written to the bot: a DM or a mention, as opposed to something said where it listens. */
   readonly direct: boolean;
   /** The quoted message under the header. */
@@ -105,12 +113,14 @@ export function readChannelHeader(text: string): ChannelHeader | null {
   const [header = "", ...lines] = text.split("\n");
   const match = CHANNEL_HEADER.exec(header);
   if (match === null || match[1] !== match[6]) return null;
+  const guest = match[3]!.endsWith(` ${GUEST_MARK}`);
   return {
     channel: match[1]!,
     where: match[2]!,
-    author: match[3]!,
+    author: guest ? match[3]!.slice(0, -GUEST_MARK.length - 1) : match[3]!,
     ref: match[5]!,
-    fromUser: match[3] === "you",
+    fromUser: guest || match[3] === "you",
+    guest,
     direct: match[4] !== undefined,
     body: lines
       .map((line) => line.replace(/^> ?/u, ""))
@@ -119,14 +129,20 @@ export function readChannelHeader(text: string): ChannelHeader | null {
   };
 }
 
-/** Where a channel message came from, as people read it: "DM" or "#eng", and "You" or a name. */
-export function channelSourceLabels(header: Pick<ChannelHeader, "where" | "author" | "fromUser">): {
+/**
+ * Where a channel message came from, as people read it: "DM" or "#eng", and "You", a guest's name
+ * with "(guest)", or anyone else's name.
+ */
+export function channelSourceLabels(
+  header: Pick<ChannelHeader, "where" | "author" | "fromUser" | "guest">,
+): {
   readonly where: string;
   readonly author: string;
 } {
+  const name = header.author.replace(/^@/u, "");
   return {
     where: header.where === "dm" ? "DM" : header.where,
-    author: header.fromUser ? "You" : header.author.replace(/^@/u, ""),
+    author: header.guest ? `${name} (guest)` : header.fromUser ? "You" : name,
   };
 }
 

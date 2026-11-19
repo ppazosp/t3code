@@ -245,7 +245,7 @@ export function routedText(input: {
     parts.push(
       input.source.kind === "worker"
         ? `The worker on "${input.source.where}" asked for this:\n${quoted(input.source.text)}`
-        : `${input.fromUser ? "The user" : input.source.author} wrote in ${input.source.where}:\n${quoted(input.source.text)}`,
+        : `${input.fromUser && !input.source.author.endsWith(" (guest)") ? "The user" : input.source.author} wrote in ${input.source.where}:\n${quoted(input.source.text)}`,
     );
   }
   parts.push(`The router's note: ${input.note}`);

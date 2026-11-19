@@ -155,7 +155,7 @@ const setStatus = (adapter: ChannelAdapter, ref: string, status: "working" | "id
 
 /** What T3 says, once per conversation, to anyone but the user who writes to it directly. */
 export const OUTSIDER_NOTE =
-  "This super-t3 works only for the person who set it up, so it did not act on your message.";
+  "This super-t3 works only for the person who set it up and the guests they invited, so it did not act on your message.";
 
 /** One run of a task, posting its result where the task came from when it ends. */
 interface RunReport {
@@ -308,6 +308,7 @@ export const run = Effect.fn("ChannelBridge.run")(function* (input: {
       text:
         taskMessageText({
           channel: adapter.name,
+          guest: message.guest === true ? message.author : null,
           text: message.text,
           unread: since.length,
           planning,
