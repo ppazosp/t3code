@@ -117,7 +117,7 @@ const remember = <K, V>(map: Map<K, V>, key: K, value: V) => {
   if (map.size > LIMIT) map.delete(map.keys().next().value!);
 };
 
-/** Records that a task posted in a conversation other than its own during its current run. */
+/** Records that a task posted in a conversation with channel_say during its current run. */
 export function noteSaid(state: BridgeState, threadId: string, ref: string): void {
   const said = state.saidIn.get(threadId) ?? new Set<string>();
   said.add(ref);
@@ -205,6 +205,8 @@ export const run = Effect.fn("ChannelBridge.run")(function* (input: {
   const activeRuns = new Map<string, string>();
   // The message that started each active run, which says where an elsewhere answer goes.
   const runMessages = new Map<string, string>();
+  // Runs that answer someone though T3 started them: a child's result, or a tag that came in mid-run.
+  const answering = new Map<string, "child" | "asked">();
   // The message each task last read up to in its conversation.
   const lastRead = new Map<string, string>();
 
@@ -433,6 +435,7 @@ export const run = Effect.fn("ChannelBridge.run")(function* (input: {
         if (activeRuns.get(runRecord.threadId) === runRecord.id) {
           activeRuns.delete(runRecord.threadId);
         }
+        answering.delete(runRecord.id);
         return;
       }
       activeRuns.set(runRecord.threadId, runRecord.id);
@@ -446,22 +449,29 @@ export const run = Effect.fn("ChannelBridge.run")(function* (input: {
     reports.delete(runRecord.id);
     activeRuns.delete(runRecord.threadId);
     runMessages.delete(runRecord.id);
+    const answers = answering.get(runRecord.id);
+    answering.delete(runRecord.id);
+    const asked = isAsked(runRecord, prefixes) || answers === "asked";
     const saidThere = state.saidIn.get(runRecord.threadId)?.has(report.ref) === true;
     state.saidIn.delete(runRecord.threadId);
-    // A turn that ends to wait for its children is not an answer: it reports once they finish.
-    // A turn someone asked for is their answer, though children still run.
+    // A turn that ends to wait for its children is not an answer. A turn someone asked for, or
+    // one reporting a child's result, is posted though other children still run.
     if (
       outcome === "completed" &&
-      !isAsked(runRecord, prefixes) &&
+      !asked &&
+      answers !== "child" &&
       childrenRunning(runRecord.threadId)
     ) {
       return;
     }
     // A plan is what a planning run ends with; it goes out like any answer, for the user to answer.
     const text = resultText(outcome, report.plan ?? report.result);
-    // Asked from another conversation, a task that answered there with channel_say is not repeated.
+    // A task that already said it with channel_say is not repeated: asked from another
+    // conversation, or reporting a child's result nobody asked about in this run.
     const quiet =
-      outcome === "completed" && (isPullRequestWake(runRecord) || (report.elsewhere && saidThere));
+      outcome === "completed" &&
+      (isPullRequestWake(runRecord) ||
+        (saidThere && (report.elsewhere || (answers === "child" && !asked))));
     if (text !== null && !quiet) yield* report.adapter.post(report.ref, { text });
     const waitsForUser =
       outcome === "completed" && known.get(runRecord.threadId)?.interactionMode === "plan";
@@ -483,9 +493,18 @@ export const run = Effect.fn("ChannelBridge.run")(function* (input: {
         return;
       }
       if (event.type !== "turn-item.updated" || event.runId === undefined) return;
+      const item = event.payload;
+      if (item.type === "user_message" && isAsked({ userMessageId: item.messageId }, prefixes)) {
+        remember(answering, event.runId, "asked");
+      } else if (
+        item.type === "notification" &&
+        item.source.kind === "delegated_task" &&
+        answering.get(event.runId) !== "asked"
+      ) {
+        remember(answering, event.runId, "child");
+      }
       const report = reports.get(event.runId);
       if (report === undefined) return;
-      const item = event.payload;
       if (item.type === "assistant_message" && !item.streaming) report.result = item.text;
       else if (item.type === "proposed_plan" && !item.streaming) report.plan = item.markdown;
     },

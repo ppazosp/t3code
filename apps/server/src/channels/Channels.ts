@@ -215,7 +215,7 @@ export const layer: Layer.Layer<
           Effect.flatMap((files) => adapter.post(ref, { text, files })),
           Effect.scoped,
         );
-        if (ref !== own) ChannelBridge.noteSaid(state, threadId, ref);
+        ChannelBridge.noteSaid(state, threadId, ref);
       }),
       read: Effect.fn("Channels.read")(function* (ref, limit) {
         const adapter = yield* adapterFor(ref);

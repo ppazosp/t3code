@@ -154,6 +154,14 @@ function runBridge(input: {
 
 const task = thread("task", { tags: [ORIGIN] });
 
+/** The note that wakes a task when one of its delegate_task children finishes. */
+const childResult = {
+  type: "notification",
+  source: { kind: "delegated_task", taskIds: [] },
+  outcome: "completed",
+  summary: "Delegated task completed",
+};
+
 describe("ChannelBridge", () => {
   it.effect(
     "posts each answer where the task came from, but only a merge's pull request wake",
@@ -293,11 +301,35 @@ describe("ChannelBridge", () => {
             "run:2",
           ),
           runEvent("run.updated", "completed", "run:2", "task", "route:task:1"),
+          // Another child's result wakes the task: that report is posted.
+          runEvent("run.created", "running", "run:3"),
+          itemEvent(childResult, "run:3"),
+          itemEvent(
+            { type: "assistant_message", text: "Images ready.", streaming: false },
+            "run:3",
+          ),
+          runEvent("run.updated", "completed", "run:3"),
+          // A report it already posted with channel_say is not repeated.
+          runEvent("run.created", "running", "run:4"),
+          itemEvent(childResult, "run:4"),
+          itemEvent({ type: "assistant_message", text: "Said it.", streaming: false }, "run:4"),
+          runEvent("run.updated", "completed", "run:4"),
+          // A tag that reaches the task mid-run makes that run's answer the user's.
+          runEvent("run.created", "running", "run:5"),
+          itemEvent(childResult, "run:5"),
+          itemEvent({ type: "user_message", messageId: `${ORIGIN}:q2`, text: "no emoji" }, "run:5"),
+          itemEvent({ type: "assistant_message", text: "Emoji gone.", streaming: false }, "run:5"),
+          runEvent("run.updated", "completed", "run:5"),
+          // A turn that only waits for its children still posts nothing.
+          runEvent("run.created", "running", "run:6"),
+          itemEvent({ type: "assistant_message", text: "Waiting.", streaming: false }, "run:6"),
+          runEvent("run.updated", "completed", "run:6"),
         ],
+        onSay: { "run:4": ORIGIN },
       });
       assert.deepStrictEqual(
         posts.map((post) => post.text),
-        ["16 CPUs, 64 GB.", "Started another child."],
+        ["16 CPUs, 64 GB.", "Started another child.", "Images ready.", "Emoji gone."],
       );
     }),
   );
