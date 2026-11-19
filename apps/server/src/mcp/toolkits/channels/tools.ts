@@ -1,6 +1,6 @@
 import { OrchestratorMcpFailure } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
-import { Tool, Toolkit } from "effect/ai";
+import { McpSchema, Tool, Toolkit } from "effect/ai";
 
 import * as Channels from "../../../channels/Channels.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
@@ -24,7 +24,8 @@ const ChannelReplyTool = Tool.make("channel_reply", {
 })
   .annotate(Tool.Title, "Reply in a channel")
   .annotate(Tool.Destructive, false)
-  .annotate(Tool.OpenWorld, true);
+  .annotate(Tool.OpenWorld, true)
+  .annotate(McpSchema.EnabledWhen, McpInvocationContext.hiddenFromOutsideClients);
 
 const ChannelSayTool = Tool.make("channel_say", {
   description:
@@ -54,7 +55,8 @@ const ChannelSayTool = Tool.make("channel_say", {
 })
   .annotate(Tool.Title, "Answer in your channel thread")
   .annotate(Tool.Destructive, false)
-  .annotate(Tool.OpenWorld, true);
+  .annotate(Tool.OpenWorld, true)
+  .annotate(McpSchema.EnabledWhen, McpInvocationContext.hiddenFromOutsideClients);
 
 const ChannelReadTool = Tool.make("channel_read", {
   description:
@@ -79,6 +81,7 @@ const ChannelReadTool = Tool.make("channel_read", {
   .annotate(Tool.Title, "Read a channel conversation")
   .annotate(Tool.Readonly, true)
   .annotate(Tool.Destructive, false)
-  .annotate(Tool.OpenWorld, true);
+  .annotate(Tool.OpenWorld, true)
+  .annotate(McpSchema.EnabledWhen, McpInvocationContext.hiddenFromOutsideClients);
 
 export const ChannelsToolkit = Toolkit.make(ChannelReplyTool, ChannelSayTool, ChannelReadTool);

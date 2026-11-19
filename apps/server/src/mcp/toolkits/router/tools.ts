@@ -6,7 +6,7 @@ import {
   ThreadId,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
-import { Tool, Toolkit } from "effect/ai";
+import { McpSchema, Tool, Toolkit } from "effect/ai";
 
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as Proposals from "../../../router/Proposals.ts";
@@ -46,7 +46,8 @@ const DispatchWorkerTool = Tool.make("dispatch_worker", {
 })
   .annotate(Tool.Title, "Dispatch a worker")
   .annotate(Tool.Destructive, false)
-  .annotate(Tool.OpenWorld, false);
+  .annotate(Tool.OpenWorld, false)
+  .annotate(McpSchema.EnabledWhen, McpInvocationContext.hiddenFromOutsideClients);
 
 const RouteToThreadTool = Tool.make("route_to_thread", {
   description:
@@ -64,7 +65,8 @@ const RouteToThreadTool = Tool.make("route_to_thread", {
 })
   .annotate(Tool.Title, "Route to a thread")
   .annotate(Tool.Destructive, false)
-  .annotate(Tool.OpenWorld, false);
+  .annotate(Tool.OpenWorld, false)
+  .annotate(McpSchema.EnabledWhen, McpInvocationContext.hiddenFromOutsideClients);
 
 const RequestWorkerTool = Tool.make("request_worker", {
   description:
@@ -79,6 +81,7 @@ const RequestWorkerTool = Tool.make("request_worker", {
 })
   .annotate(Tool.Title, "Ask the router for a worker")
   .annotate(Tool.Destructive, false)
-  .annotate(Tool.OpenWorld, false);
+  .annotate(Tool.OpenWorld, false)
+  .annotate(McpSchema.EnabledWhen, McpInvocationContext.hiddenFromOutsideClients);
 
 export const RouterToolkit = Toolkit.make(DispatchWorkerTool, RouteToThreadTool, RequestWorkerTool);
